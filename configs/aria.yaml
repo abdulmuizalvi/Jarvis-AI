@@ -1,0 +1,86 @@
+aria:
+  identity:
+    name: "JARVIS"
+    version: "0.1.0"
+    persona: "jarvis_prime"
+    pronouns: "it"
+
+  runtime:
+    mode: "wake_word"           # push_to_talk | wake_word | ambient
+    wake_word: "jarvis"
+    wake_word_aliases: ["jarvis", "jarves", "jarv", "j.a.r.v.i.s"]
+    max_context_tokens: 200000
+    dual_track_reasoning: true
+    first_audio_budget_ms: 400
+    utterance_end_ms: 1200
+
+    # Conversation engagement:
+    # Once the user addresses JARVIS, it stays "engaged" (no wake word
+    # needed) until one of these conditions ends the conversation:
+    #   1. engagement_timeout_ms of silence with no user speech
+    #   2. User says a disengagement phrase ("that's all", "goodbye", etc.)
+    #   3. JARVIS detects the user is talking to someone else
+    engagement_timeout_ms: 30000
+
+  models:
+    provider: "groq"
+    # llama-3.3-70b-versatile: 100K TPD free (premium, use when available)
+    # llama-3.1-8b-instant:    500K TPD free (fast fallback, always available)
+    reasoning_primary: "llama-3.1-8b-instant"
+    reasoning_fast: "llama-3.1-8b-instant"
+    classifier: "llama-3.1-8b-instant"
+    extended_thinking: false
+    thinking_budget_tokens: 8000
+    fallback_local: "llama-3.3-70b-instruct"
+    base_url_groq: "https://api.groq.com/openai/v1"
+
+  voice:
+    asr:
+      provider: "deepgram"
+      model: "nova-3"
+      streaming: true
+      interim_results: true
+      # Endpointing kept generous — final transcripts are coalesced into
+      # a complete utterance by utterance_end_ms in the orchestrator.
+      endpointing_ms: 600
+      diarize: false
+    tts:
+      # provider: "browser" → free Web Speech API rendered in the HUD
+      # provider: "elevenlabs" → premium cloud voice (requires paid plan)
+      provider: "browser"
+      voice_id: "aria_prime_v1"
+      model: "eleven_turbo_v2_5"
+      optimize_latency: 3
+      stability: 0.55
+      similarity_boost: 0.85
+      style: 0.25
+    vad:
+      provider: "silero"
+      threshold: 0.5
+    barge_in: true
+
+  memory:
+    driver: "sqlite"            # sqlite (Phase 1) → pinecone+neo4j (Phase 2)
+    working_window_turns: 20
+    consolidation_cron: "0 3 * * *"
+    decay_tau_days: 30
+    retrieval_top_k: 8
+
+  autonomy:
+    default_tier: 1
+    confidence_gate:
+      act: 0.85
+      ask: 0.50
+    require_confirm_tiers: [2, 3]
+    require_biometric_tiers: [3]
+
+  emotion:
+    enabled: true
+    fusion: ["text", "prosody"]
+    smoothing_alpha: 0.3
+
+  safety:
+    policy_engine: "local"
+    audit_log: true
+    pii_redaction: true
+    blocked_actions: ["delete_account", "transfer_large_funds"]

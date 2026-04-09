@@ -1,0 +1,138 @@
+# ARIA MCP Tool Registry — Phase 2 Target (20 integrations)
+#
+# Each tool is declared with: scope, tier, reversibility, and required scopes.
+# The orchestrator loads this at startup and passes it to the planner.
+# Tier levels (see safety policy):
+#   0 = read-only, silent
+#   1 = low-impact write, autonomous + narrated
+#   2 = external communication / finance <$50, requires consent
+#   3 = irreversible / high-impact, requires biometric + consent
+
+tools:
+
+  # ── Phase 1: Core ───────────────────────────────────────────────
+  - id: calendar.read
+    description: "Read upcoming events from the user's primary calendar."
+    tier: 0
+    reversible: true
+    provider: "google_calendar"
+    scopes: ["calendar.readonly"]
+
+  - id: weather.forecast
+    description: "Get current and forecasted weather for a location."
+    tier: 0
+    reversible: true
+    provider: "openweather"
+
+  - id: web.search
+    description: "Perform a web search and return top results with snippets."
+    tier: 0
+    reversible: true
+    provider: "brave_search"
+
+  - id: notes.append
+    description: "Append a note or observation to the user's personal journal."
+    tier: 1
+    reversible: true
+    provider: "local_sqlite"
+
+  - id: timer.set
+    description: "Set a countdown timer or alarm."
+    tier: 1
+    reversible: true
+    provider: "local"
+
+  # ── Phase 2: Communication ─────────────────────────────────────
+  - id: email.read
+    description: "Read unread or recent emails with sender, subject, and snippet."
+    tier: 0
+    reversible: true
+    provider: "gmail"
+    scopes: ["gmail.readonly"]
+
+  - id: email.draft
+    description: "Compose an email draft (not sent) and return it for review."
+    tier: 1
+    reversible: true
+    provider: "gmail"
+
+  - id: email.send
+    description: "Send an email after explicit user confirmation."
+    tier: 2
+    reversible: false
+    provider: "gmail"
+    scopes: ["gmail.send"]
+
+  - id: slack.read
+    description: "Read recent Slack messages from a channel or DM."
+    tier: 0
+    reversible: true
+    provider: "slack"
+
+  - id: slack.send
+    description: "Send a Slack message after user confirmation."
+    tier: 2
+    reversible: false
+    provider: "slack"
+
+  - id: sms.send
+    description: "Send a text message."
+    tier: 2
+    reversible: false
+    provider: "twilio"
+
+  # ── Phase 2: Productivity ──────────────────────────────────────
+  - id: calendar.create_event
+    description: "Create a new calendar event."
+    tier: 1
+    reversible: true
+    provider: "google_calendar"
+
+  - id: calendar.modify_event
+    description: "Move, reschedule, or cancel an existing event."
+    tier: 1
+    reversible: true
+    provider: "google_calendar"
+
+  - id: files.read
+    description: "Read a file from the user's workspace."
+    tier: 0
+    reversible: true
+    provider: "local_fs"
+
+  - id: files.write
+    description: "Create or modify a file in the user's workspace."
+    tier: 1
+    reversible: true
+    provider: "local_fs"
+
+  - id: github.read
+    description: "Read repositories, issues, and pull requests."
+    tier: 0
+    reversible: true
+    provider: "github"
+
+  - id: github.comment
+    description: "Post a comment on an issue or pull request."
+    tier: 2
+    reversible: false
+    provider: "github"
+
+  # ── Phase 3: Environment & World ───────────────────────────────
+  - id: homeassistant.state
+    description: "Read state of smart home devices."
+    tier: 0
+    reversible: true
+    provider: "home_assistant"
+
+  - id: homeassistant.control
+    description: "Control a smart home device (lights, thermostat, locks)."
+    tier: 1
+    reversible: true
+    provider: "home_assistant"
+
+  - id: maps.route
+    description: "Get directions and live traffic for a route."
+    tier: 0
+    reversible: true
+    provider: "google_maps"
