@@ -42,6 +42,10 @@ export function App() {
   }, []);
 
   const narrow = vp.w <= 820;
+  // Landscape narrow (e.g. phone rotated) — keep controls in a row to save
+  // vertical space, but still scale touch targets up.
+  const landscapeNarrow = narrow && vp.w > vp.h;
+  const stackControls = narrow && !landscapeNarrow;
 
   return (
     <div style={{
@@ -91,11 +95,11 @@ export function App() {
         // Push above safe-area inset on iPhone
         bottom: `calc(${narrow ? 20 : 28}px + env(safe-area-inset-bottom))`,
         display: "flex",
-        flexDirection: narrow ? "column" : "row",
-        gap: narrow ? 12 : 10,
+        flexDirection: stackControls ? "column" : "row",
+        gap: stackControls ? 12 : 10,
         alignItems: "center",
-        width: narrow ? "90%" : "auto",
-        maxWidth: 420,
+        width: stackControls ? "90%" : "auto",
+        maxWidth: 540,
       }}>
         {/* Engage / Standby button */}
         <button
@@ -107,9 +111,9 @@ export function App() {
             border: `1px solid ${engaged ? "rgba(0,220,180,0.5)" : "rgba(0,180,255,0.35)"}`,
             color: engaged ? "rgba(0,240,180,0.9)" : "rgba(0,180,255,0.75)",
             // iOS HIG — minimum 44×44 touch target
-            padding: narrow ? "14px 28px" : "7px 18px",
-            minHeight: narrow ? 48 : undefined,
-            minWidth: narrow ? 140 : undefined,
+            padding: narrow ? (landscapeNarrow ? "12px 22px" : "14px 28px") : "7px 18px",
+            minHeight: narrow ? 46 : undefined,
+            minWidth: narrow ? (landscapeNarrow ? 110 : 140) : undefined,
             borderRadius: 2,
             fontFamily: "inherit",
             fontSize: narrow ? 12 : 10,
@@ -127,8 +131,8 @@ export function App() {
           {state === "idle" ? "engage" : "standby"}
         </button>
 
-        {/* Divider — horizontal on narrow, vertical on wide */}
-        {!narrow && (
+        {/* Divider — only when row layout */}
+        {!stackControls && (
           <div style={{ width: 1, height: 20, background: "rgba(0,180,255,0.15)" }} />
         )}
 
@@ -153,14 +157,14 @@ export function App() {
             background: "rgba(0,180,255,0.05)",
             border: "1px solid rgba(0,180,255,0.18)",
             color: "#cce8ff",
-            padding: narrow ? "14px 16px" : "7px 14px",
+            padding: narrow ? (landscapeNarrow ? "12px 14px" : "14px 16px") : "7px 14px",
             borderRadius: 2,
             fontFamily: "inherit",
             // iOS auto-zooms on focus when font-size is < 16px
             fontSize: narrow ? 16 : 11,
             letterSpacing: 0.5,
-            width: narrow ? "100%" : 210,
-            minHeight: narrow ? 48 : undefined,
+            width: stackControls ? "100%" : (landscapeNarrow ? 240 : 210),
+            minHeight: narrow ? 46 : undefined,
             outline: "none",
             boxSizing: "border-box",
           }}

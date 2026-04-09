@@ -321,29 +321,42 @@ export function Orb({
   const speaking = state === "speaking";
   const device = getDevice();
 
-  // Reactive sizing — fit the orb to the smallest viewport edge on mobile so
-  // the 3D scene stays inside the HUD frame in portrait and landscape.
-  const [size, setSize] = useState(() => {
+  // Reactive sizing — fit the orb to viewport so the 3D scene always
+  // stays inside the HUD frame regardless of device. We key off width
+  // (not just isMobile) so DevTools resize and real mobiles both work.
+  // Landscape vs portrait is handled separately because the bottom
+  // controls reserve a different amount of vertical space in each.
+  const computeSize = () => {
     if (typeof window === "undefined") return 380;
-    const min = Math.min(window.innerWidth, window.innerHeight);
-    return device.isMobile ? Math.max(240, Math.min(340, min * 0.75)) : 380;
-  });
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const narrow = w <= 820;
+    if (!narrow) return 380;
+    const landscape = w > h;
+    // Portrait narrow stacks controls vertically (~290 px reserve).
+    // Landscape narrow keeps controls in a row (~150 px reserve).
+    const reserve = landscape ? 150 : 290;
+    const maxByWidth = w * (landscape ? 0.55 : 0.78);
+    const maxByHeight = h - reserve;
+    return Math.max(180, Math.min(maxByWidth, maxByHeight, 320));
+  };
+
+  const [size, setSize] = useState(computeSize);
 
   useEffect(() => {
-    const onResize = () => {
-      const min = Math.min(window.innerWidth, window.innerHeight);
-      setSize(device.isMobile ? Math.max(240, Math.min(340, min * 0.75)) : 380);
-    };
+    const onResize = () => setSize(computeSize());
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("orientationchange", onResize);
     };
-  }, [device.isMobile]);
+  }, []);
 
-  // Scale scene complexity to device perf tier.
-  const tier = device.perfTier;
+  // Scale scene complexity. Treat narrow viewport as "needs lighter scene"
+  // even when the UA isn't mobile (e.g. DevTools responsive mode).
+  const narrowVp = typeof window !== "undefined" && window.innerWidth <= 820;
+  const tier = device.perfTier === "low" ? "low" : narrowVp && device.perfTier === "high" ? "mid" : device.perfTier;
   const particleCount = tier === "low" ? 45 : tier === "mid" ? 80 : 130;
   const showWireShell = tier !== "low";
   const showGlowShell = tier !== "low";
