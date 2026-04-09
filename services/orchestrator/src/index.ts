@@ -50,6 +50,19 @@ async function main() {
   }));
 
   // Optional debug route
+  
+  app.post("/chat", async (req, reply) => {
+  const { message } = req.body as any;
+
+  try {
+    const response = await (reasoner as any).ask?.(message)
+  || await (reasoner as any).run?.(message)
+  || "JARVIS is thinking...";
+    return { reply: response };
+  } catch (err) {
+    return { reply: "Error talking to JARVIS" };
+  }
+});
   app.get("/memory/export", async () => {
     return memory.exportAll();
   });
