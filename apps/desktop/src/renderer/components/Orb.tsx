@@ -11,9 +11,10 @@
  */
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useEffect, useState } from "react";
 import * as THREE from "three";
 import type { SessionState, AffectState } from "../hooks/useVoiceSession";
+import { getDevice } from "../lib/device";
 
 // ─── colours per state ────────────────────────────────────────────────────
 const C: Record<SessionState, string> = {
@@ -27,12 +28,14 @@ const C: Record<SessionState, string> = {
 function ParticleCloud({
   convState,
   state,
+  count,
 }: {
   convState: "ambient" | "engaged";
   state: SessionState;
+  count: number;
 }) {
   const ref = useRef<THREE.Points>(null);
-  const COUNT = 130;
+  const COUNT = count;
 
   const positions = useMemo(() => {
     const arr = new Float32Array(COUNT * 3);
@@ -45,7 +48,8 @@ function ParticleCloud({
       arr[i * 3 + 2] = r * Math.cos(phi);
     }
     return arr;
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [COUNT]);
 
   const color = useMemo(() => new THREE.Color(C[state]), [state]);
   const matRef = useRef<THREE.PointsMaterial>(null);
@@ -315,34 +319,78 @@ export function Orb({
   convState: "ambient" | "engaged";
 }) {
   const speaking = state === "speaking";
+  const device = getDevice();
+
+  // Reactive sizing — fit the orb to the smallest viewport edge on mobile so
+  // the 3D scene stays inside the HUD frame in portrait and landscape.
+  const [size, setSize] = useState(() => {
+    if (typeof window === "undefined") return 380;
+    const min = Math.min(window.innerWidth, window.innerHeight);
+    return device.isMobile ? Math.max(240, Math.min(340, min * 0.75)) : 380;
+  });
+
+  useEffect(() => {
+    const onResize = () => {
+      const min = Math.min(window.innerWidth, window.innerHeight);
+      setSize(device.isMobile ? Math.max(240, Math.min(340, min * 0.75)) : 380);
+    };
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, [device.isMobile]);
+
+  // Scale scene complexity to device perf tier.
+  const tier = device.perfTier;
+  const particleCount = tier === "low" ? 45 : tier === "mid" ? 80 : 130;
+  const showWireShell = tier !== "low";
+  const showGlowShell = tier !== "low";
+  // Mid tier keeps 2 rings, low drops to 1.
+  const ringCount = tier === "high" ? 3 : tier === "mid" ? 2 : 1;
+  // Cap DPR so iPhones don't render at 3× and tank the frame rate.
+  const dpr: [number, number] = tier === "low" ? [1, 1] : tier === "mid" ? [1, 1.5] : [1, 2];
 
   return (
-    <div style={{ width: 380, height: 380, position: "relative" }}>
+    <div style={{ width: size, height: size, position: "relative" }}>
       <Canvas
         camera={{ position: [0, 0, 4], fov: 42 }}
-        gl={{ antialias: true, alpha: true }}
+        gl={{ antialias: tier !== "low", alpha: true, powerPreference: "high-performance" }}
+        dpr={dpr}
         style={{ background: "transparent" }}
       >
         <ambientLight intensity={convState === "engaged" ? 0.5 : 0.25} />
         <pointLight position={[5, 5, 5]}  intensity={convState === "engaged" ? 1.8 : 1.0} />
         <pointLight position={[-4, -3, 3]} intensity={0.6} color="#4488ff" />
-        <pointLight position={[0, 5, -4]}  intensity={0.4} color="#aa44ff" />
+        {tier !== "low" && (
+          <pointLight position={[0, 5, -4]}  intensity={0.4} color="#aa44ff" />
+        )}
 
         {/* Back → front render order */}
-        <ParticleCloud convState={convState} state={state} />
-        <GlowShell state={state} />
+        <ParticleCloud convState={convState} state={state} count={particleCount} />
+        {showGlowShell && <GlowShell state={state} />}
 
-        {/* 3 orbital rings — different axes & speeds */}
-        <OrbitalRing radius={1.72} tube={0.008} tiltX={0}               tiltZ={0}    speed={0.55}  state={state} opacity={convState === "engaged" ? 0.55 : 0.20} />
-        <OrbitalRing radius={1.58} tube={0.007} tiltX={Math.PI / 2}     tiltZ={0}    speed={-0.38} state={state} opacity={convState === "engaged" ? 0.45 : 0.18} />
-        <OrbitalRing radius={1.65} tube={0.006} tiltX={Math.PI / 3.5}   tiltZ={0.8}  speed={0.72}  state={state} opacity={convState === "engaged" ? 0.38 : 0.14} />
+        {/* Orbital rings — scale count by tier */}
+        {ringCount >= 1 && (
+          <OrbitalRing radius={1.72} tube={0.008} tiltX={0} tiltZ={0} speed={0.55}
+            state={state} opacity={convState === "engaged" ? 0.55 : 0.20} />
+        )}
+        {ringCount >= 2 && (
+          <OrbitalRing radius={1.58} tube={0.007} tiltX={Math.PI / 2} tiltZ={0} speed={-0.38}
+            state={state} opacity={convState === "engaged" ? 0.45 : 0.18} />
+        )}
+        {ringCount >= 3 && (
+          <OrbitalRing radius={1.65} tube={0.006} tiltX={Math.PI / 3.5} tiltZ={0.8} speed={0.72}
+            state={state} opacity={convState === "engaged" ? 0.38 : 0.14} />
+        )}
 
-        <WireShell state={state} />
+        {showWireShell && <WireShell state={state} />}
         <CoreSphere state={state} affect={affect} convState={convState} />
 
         {/* Speaking pulse rings */}
         <ScanPulse  active={speaking} />
-        <ScanPulse2 active={speaking} />
+        {tier !== "low" && <ScanPulse2 active={speaking} />}
       </Canvas>
     </div>
   );

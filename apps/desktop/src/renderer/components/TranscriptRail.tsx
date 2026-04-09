@@ -2,10 +2,12 @@ export function TranscriptRail({
   transcript,
   response,
   convState,
+  narrow = false,
 }: {
   transcript: string;
   response: string;
   convState: "ambient" | "engaged";
+  narrow?: boolean;
 }) {
   const hasContent = transcript || response;
   if (!hasContent) return null;
@@ -13,11 +15,15 @@ export function TranscriptRail({
   return (
     <div style={{
       position: "absolute",
-      bottom: 120,
-      width: "min(520px, 80%)",
+      // Stay above the controls + iPhone home indicator
+      bottom: `calc(${narrow ? 170 : 120}px + env(safe-area-inset-bottom))`,
+      width: narrow ? "92%" : "min(520px, 80%)",
+      maxHeight: narrow ? "30vh" : "none",
+      overflowY: narrow ? "auto" : "visible",
       display: "flex",
       flexDirection: "column",
       gap: 8,
+      padding: narrow ? "0 4px" : 0,
     }}>
       {/* User utterance */}
       {transcript && (

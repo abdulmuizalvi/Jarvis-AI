@@ -63,11 +63,13 @@ function Corner({
 function WaveformBars({
   state,
   convState,
+  narrow,
 }: {
   state: SessionState;
   convState: "ambient" | "engaged";
+  narrow: boolean;
 }) {
-  const BAR_COUNT = 20;
+  const BAR_COUNT = narrow ? 14 : 20;
   const heightsRef = useRef<number[]>(Array(BAR_COUNT).fill(4));
   const barsRef = useRef<HTMLDivElement[]>([]);
   const rafRef = useRef<number>(0);
@@ -142,13 +144,21 @@ function ScanLine({ active }: { active: boolean }) {
 }
 
 // ─── Arc indicator (SVG arc segment) ─────────────────────────────────────
-function ArcIndicators({ state, convState }: { state: SessionState; convState: "ambient" | "engaged" }) {
+function ArcIndicators({
+  state,
+  convState,
+  narrow,
+}: {
+  state: SessionState;
+  convState: "ambient" | "engaged";
+  narrow: boolean;
+}) {
   const color =
     state === "speaking" ? "#00ffaa" :
     state === "thinking" ? "#a855f7" : "#00c8ff";
   const opacity = convState === "engaged" ? 0.7 : 0.2;
-  const size = 420;
-  const r = 200;
+  const size = narrow ? 320 : 420;
+  const r = narrow ? 152 : 200;
   const cx = size / 2;
   const cy = size / 2;
 
@@ -220,13 +230,20 @@ export function HudFrame({
   state,
   convState,
   affect,
+  narrow = false,
 }: {
   state: SessionState;
   convState: "ambient" | "engaged";
   affect: AffectState;
+  narrow?: boolean;
 }) {
   const engaged = convState === "engaged";
   const active  = state !== "idle";
+
+  // Mobile-friendly insets so HUD chrome respects iPhone notch + home bar.
+  const topPad    = narrow ? 14 : 22;
+  const sidePad   = narrow ? 14 : 24;
+  const bottomPad = narrow ? 14 : 22;
 
   return (
     <>
@@ -249,7 +266,7 @@ export function HudFrame({
       `}</style>
 
       {/* Arc segments around orb */}
-      <ArcIndicators state={state} convState={convState} />
+      <ArcIndicators state={state} convState={convState} narrow={narrow} />
 
       {/* Scan line */}
       <ScanLine active={state === "thinking"} />
@@ -257,15 +274,15 @@ export function HudFrame({
       {/* ── Top-left info block ─────────────────────────────────── */}
       <div style={{
         position: "absolute",
-        top: 22,
-        left: 24,
+        top: `calc(${topPad}px + env(safe-area-inset-top))`,
+        left: `calc(${sidePad}px + env(safe-area-inset-left))`,
         display: "flex",
         flexDirection: "column",
         gap: 6,
       }}>
         {/* Main title */}
         <div style={{
-          fontSize: 13,
+          fontSize: narrow ? 11 : 13,
           letterSpacing: 3,
           color: engaged ? "rgba(0,240,180,0.9)" : "rgba(0,180,255,0.55)",
           textTransform: "uppercase",
@@ -286,7 +303,7 @@ export function HudFrame({
             transition: "background 0.5s, box-shadow 0.5s",
           }} />
           <div style={{
-            fontSize: 9,
+            fontSize: narrow ? 8 : 9,
             letterSpacing: 2,
             color: engaged ? "rgba(0,240,180,0.7)" : "rgba(0,180,255,0.35)",
             textTransform: "uppercase",
@@ -297,22 +314,31 @@ export function HudFrame({
         </div>
       </div>
 
-      {/* ── Top-right status chips ──────────────────────────────── */}
-      <div style={{
-        position: "absolute",
-        top: 22,
-        right: 24,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        gap: 6,
-      }}>
-        <StatusChip label="mode"   value={state}      active={active} />
-        <StatusChip label="affect" value={affect.mode} active={active} />
-      </div>
+      {/* ── Top-right status chips — hide on narrow ─────────────── */}
+      {!narrow && (
+        <div style={{
+          position: "absolute",
+          top: `calc(${topPad}px + env(safe-area-inset-top))`,
+          right: `calc(${sidePad}px + env(safe-area-inset-right))`,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          gap: 6,
+        }}>
+          <StatusChip label="mode"   value={state}      active={active} />
+          <StatusChip label="affect" value={affect.mode} active={active} />
+        </div>
+      )}
 
       {/* ── Full-screen corner brackets ─────────────────────────── */}
-      <div style={{ position: "absolute", inset: 16, pointerEvents: "none" }}>
+      <div style={{
+        position: "absolute",
+        top: `calc(${narrow ? 8 : 16}px + env(safe-area-inset-top))`,
+        right: `calc(${narrow ? 8 : 16}px + env(safe-area-inset-right))`,
+        bottom: `calc(${narrow ? 8 : 16}px + env(safe-area-inset-bottom))`,
+        left: `calc(${narrow ? 8 : 16}px + env(safe-area-inset-left))`,
+        pointerEvents: "none",
+      }}>
         <Corner pos="tl" active={engaged} />
         <Corner pos="tr" active={engaged} />
         <Corner pos="bl" active={engaged} />
@@ -322,14 +348,14 @@ export function HudFrame({
       {/* ── Bottom waveform + wake hint ─────────────────────────── */}
       <div style={{
         position: "absolute",
-        bottom: 78,
+        bottom: `calc(${narrow ? 110 : 78}px + env(safe-area-inset-bottom))`,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         gap: 8,
       }}>
-        <WaveformBars state={state} convState={convState} />
-        {active && !engaged && (
+        <WaveformBars state={state} convState={convState} narrow={narrow} />
+        {active && !engaged && !narrow && (
           <div style={{
             fontSize: 9,
             letterSpacing: 2.5,
@@ -337,36 +363,40 @@ export function HudFrame({
             textTransform: "uppercase",
             animation: "fadeIn 0.4s ease",
           }}>
-            say "jarvis" to engage
+            tap engage and just talk
           </div>
         )}
       </div>
 
-      {/* ── Bottom-left memory indicator ────────────────────────── */}
-      <div style={{
-        position: "absolute",
-        bottom: 22,
-        left: 24,
-        fontSize: 8,
-        letterSpacing: 1.8,
-        color: "rgba(0,180,255,0.25)",
-        textTransform: "uppercase",
-      }}>
-        mem active
-      </div>
+      {/* ── Bottom-left memory indicator — hide on narrow ───────── */}
+      {!narrow && (
+        <div style={{
+          position: "absolute",
+          bottom: `calc(${bottomPad}px + env(safe-area-inset-bottom))`,
+          left: `calc(${sidePad}px + env(safe-area-inset-left))`,
+          fontSize: 8,
+          letterSpacing: 1.8,
+          color: "rgba(0,180,255,0.25)",
+          textTransform: "uppercase",
+        }}>
+          mem active
+        </div>
+      )}
 
-      {/* ── Bottom-right latency indicator ──────────────────────── */}
-      <div style={{
-        position: "absolute",
-        bottom: 22,
-        right: 24,
-        fontSize: 8,
-        letterSpacing: 1.8,
-        color: "rgba(0,180,255,0.25)",
-        textTransform: "uppercase",
-      }}>
-        groq · llama 3.1
-      </div>
+      {/* ── Bottom-right latency indicator — hide on narrow ─────── */}
+      {!narrow && (
+        <div style={{
+          position: "absolute",
+          bottom: `calc(${bottomPad}px + env(safe-area-inset-bottom))`,
+          right: `calc(${sidePad}px + env(safe-area-inset-right))`,
+          fontSize: 8,
+          letterSpacing: 1.8,
+          color: "rgba(0,180,255,0.25)",
+          textTransform: "uppercase",
+        }}>
+          groq · llama 3.1
+        </div>
+      )}
     </>
   );
 }

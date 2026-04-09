@@ -2,10 +2,45 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#020810" />
     <title>JARVIS</title>
     <style>
-      html, body, #root { margin: 0; padding: 0; height: 100%; background: #000; color: #e8f4ff; font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; overflow: hidden; }
+      html, body, #root {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        /* Use dynamic viewport on mobile to account for iOS Safari chrome */
+        min-height: 100vh;
+        min-height: 100dvh;
+        background: #000;
+        color: #e8f4ff;
+        font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: manipulation;
+      }
+      /* Allow text selection inside the text input */
+      input, textarea {
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      /* iOS: prevent rubber-banding */
+      body {
+        position: fixed;
+        width: 100%;
+        overscroll-behavior: none;
+      }
     </style>
   </head>
   <body>
