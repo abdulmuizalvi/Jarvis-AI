@@ -18,7 +18,7 @@ const GATEWAY_WS =
 const HEX_GRID = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zM28 100L0 84V50l28-16 28 16v34L28 100z' fill='none' stroke='rgba(0%2C180%2C255%2C0.04)' stroke-width='0.5'/%3E%3C/svg%3E")`;
 
 export function App() {
-  const { state, convState, affect, transcript, response, start, stop, sendText } =
+  const { state, convState, affect, transcript, response, error, diag, start, stop, sendText } =
     useVoiceSession(GATEWAY_WS);
 
   const engaged = convState === "engaged";
@@ -82,6 +82,51 @@ export function App() {
 
       {/* ── HUD chrome layer (brackets, arcs, scan, waveform) ─ */}
       <HudFrame state={state} convState={convState} affect={affect} narrow={narrow} />
+
+      {/* ── Diagnostic strip (under JARVIS title) ────────────── */}
+      {diag && (
+        <div style={{
+          position: "absolute",
+          top: `calc(${narrow ? 60 : 70}px + env(safe-area-inset-top))`,
+          left: `calc(${narrow ? 14 : 24}px + env(safe-area-inset-left))`,
+          fontSize: 9,
+          letterSpacing: 1.2,
+          color: error ? "rgba(255,120,120,0.85)" : "rgba(0,180,255,0.45)",
+          textTransform: "lowercase",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          maxWidth: narrow ? "calc(100% - 28px)" : 360,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}>
+          ◆ {diag}
+        </div>
+      )}
+
+      {/* ── Error banner (only if something went wrong) ─────── */}
+      {error && (
+        <div style={{
+          position: "absolute",
+          top: `calc(${narrow ? 80 : 92}px + env(safe-area-inset-top))`,
+          left: "50%",
+          transform: "translateX(-50%)",
+          maxWidth: narrow ? "92%" : 540,
+          padding: "10px 14px",
+          background: "rgba(40,8,8,0.85)",
+          border: "1px solid rgba(255,80,80,0.5)",
+          borderRadius: 2,
+          color: "#ffd0d0",
+          fontSize: narrow ? 11 : 11,
+          letterSpacing: 0.4,
+          lineHeight: 1.45,
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+          zIndex: 50,
+          textAlign: "center",
+        }}>
+          {error}
+        </div>
+      )}
 
       {/* ── JARVIS Orb ─────────────────────────────────────── */}
       <Orb state={state} affect={affect} convState={convState} />

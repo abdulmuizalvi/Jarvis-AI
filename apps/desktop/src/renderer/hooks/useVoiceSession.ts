@@ -33,6 +33,8 @@ export function useVoiceSession(wsUrl: string) {
   });
   const [transcript, setTranscript] = useState("");
   const [response, setResponse] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [diag, setDiag] = useState<string>("");
 
   const wsRef = useRef<WebSocket | null>(null);
   const micCtxRef = useRef<AudioContext | null>(null);
@@ -91,21 +93,66 @@ export function useVoiceSession(wsUrl: string) {
 
   const start = useCallback(async () => {
     // Must run synchronously with the user gesture for iOS.
+    setError(null);
+    setDiag(`connecting → ${wsUrl}`);
+    console.log("[voice] start → wsUrl=", wsUrl);
     unlockSpeech();
     ensurePlaybackCtx();
 
-    const ws = new WebSocket(wsUrl);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[voice] WebSocket constructor threw", err);
+      setError(`WS construct failed: ${msg}`);
+      setDiag("ws construct failed");
+      return;
+    }
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
+    // Hard timeout — if WS hasn't opened in 8s something is blocking it
+    // (firewall, AV proxy, corporate TLS inspection, etc).
+    const openTimeout = window.setTimeout(() => {
+      if (ws.readyState !== 1) {
+        console.error("[voice] WS open timeout (8s) — readyState=", ws.readyState);
+        setError("WS connect timeout — firewall/AV/network blocking wss?");
+        setDiag(`timeout (rs=${ws.readyState})`);
+        try { ws.close(); } catch { /* ignore */ }
+      }
+    }, 8000);
+
     ws.onopen = async () => {
+      window.clearTimeout(openTimeout);
+      console.log("[voice] WS open");
+      setDiag("ws open · requesting mic");
       ws.send(JSON.stringify({ type: "start" }));
       try {
         await startMicCapture();
+        setDiag("mic ok · listening");
       } catch (err) {
-        console.warn("[voice] mic capture failed", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        const name = err instanceof Error ? err.name : "Error";
+        console.error("[voice] mic capture failed", err);
+        if (name === "NotAllowedError") {
+          setError("Mic permission blocked. Click the lock icon → allow microphone.");
+        } else if (name === "NotFoundError") {
+          setError("No microphone detected on this device.");
+        } else if (name === "NotReadableError") {
+          setError("Mic in use by another app (Zoom/Teams/Discord/OBS?).");
+        } else {
+          setError(`Mic error: ${name} — ${msg}`);
+        }
+        setDiag(`mic failed: ${name}`);
       }
       setState("listening");
+    };
+
+    ws.onerror = (evt) => {
+      console.error("[voice] WS error", evt);
+      setError("WebSocket error — see DevTools console for details.");
+      setDiag("ws error");
     };
 
     ws.onmessage = (evt) => {
@@ -132,16 +179,30 @@ export function useVoiceSession(wsUrl: string) {
         case "ambient_logged":
           setTranscript(`◦ ${msg.text}`);
           break;
+        case "error":
+          console.error("[voice] orchestrator error:", msg.message);
+          setError(`orchestrator: ${msg.message}`);
+          setDiag(`backend error`);
+          break;
         case "done":
           break;
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (evt) => {
+      window.clearTimeout(openTimeout);
+      console.log("[voice] WS close", evt.code, evt.reason);
+      // Code 1006 = abnormal close (typical for blocked/aborted handshakes)
+      if (evt.code === 1006 && !error) {
+        setError("WS closed abnormally (1006). Network/firewall blocked the connection.");
+        setDiag("close 1006");
+      } else {
+        setDiag(`closed (${evt.code})`);
+      }
       stopMicCapture();
       setState("idle");
     };
-  }, [wsUrl, unlockSpeech, ensurePlaybackCtx]);
+  }, [wsUrl, unlockSpeech, ensurePlaybackCtx, error]);
 
   const stop = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "stop" }));
@@ -294,5 +355,5 @@ export function useVoiceSession(wsUrl: string) {
 
   useEffect(() => () => stop(), [stop]);
 
-  return { state, convState, affect, transcript, response, start, stop, sendText };
+  return { state, convState, affect, transcript, response, error, diag, start, stop, sendText };
 }
