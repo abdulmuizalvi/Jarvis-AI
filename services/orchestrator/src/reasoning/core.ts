@@ -192,7 +192,9 @@ export class ReasoningCore {
       }
     });
 
-    stream.on("thinking", (delta) => thoughtParts.push(delta));
+    (stream as any).on("thinking", (delta: any) => {
+  thoughtParts.push(delta);
+});
 
     const final = await stream.finalMessage();
     if (sentenceBuffer.trim()) req.onToken(sentenceBuffer);

@@ -63,7 +63,7 @@ export class DeepgramASR {
   }
 
   sendAudio(buf: Buffer) {
-    this.live?.send(buf);
+    this.live?.send(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
   }
 
   close() {

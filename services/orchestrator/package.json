@@ -13,10 +13,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
     "@deepgram/sdk": "^3.6.0",
-    "openai": "^4.68.0",
     "better-sqlite3": "^11.3.0",
     "dotenv": "^16.4.0",
     "fastify": "^4.28.0",
+    "openai": "^4.68.0",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.0",
     "undici": "^6.19.0",
@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^25.5.2",
     "@types/ws": "^8.5.12",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"

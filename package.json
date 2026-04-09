@@ -2,16 +2,10 @@
   "name": "aria",
   "version": "0.1.0",
   "private": true,
-  "description": "ARIA — Autonomous Reasoning & Intelligence Assistant",
   "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "dev": "pnpm --filter web dev",
-    "build": "pnpm --filter web build",
-    "typecheck": "pnpm --filter web typecheck",
-    "lint": "pnpm --filter web lint"
-  },
-  "devDependencies": {
-    "typescript": "^5.5.0",
-    "@types/node": "^20.12.0"
+    "dev": "pnpm --filter orchestrator dev",
+    "build": "pnpm --filter orchestrator build",
+    "start": "pnpm --filter orchestrator start"
   }
 }
