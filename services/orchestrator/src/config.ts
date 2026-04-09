@@ -32,7 +32,7 @@ export interface AriaConfig {
       base_url_groq?: string;
     };
     voice: {
-      asr: { provider: string; model: string; streaming: boolean; interim_results: boolean; endpointing_ms: number; diarize: boolean };
+      asr: { provider: string; model: string; language?: string; streaming: boolean; interim_results: boolean; endpointing_ms: number; diarize: boolean };
       tts: { provider: "browser" | "elevenlabs"; voice_id: string; model: string; optimize_latency: number; stability: number; similarity_boost: number; style: number };
       vad: { provider: string; threshold: number };
       barge_in: boolean;

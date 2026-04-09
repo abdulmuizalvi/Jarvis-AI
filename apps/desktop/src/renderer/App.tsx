@@ -3,7 +3,15 @@ import { Orb }             from "./components/Orb";
 import { TranscriptRail }  from "./components/TranscriptRail";
 import { HudFrame }        from "./components/HudFrame";
 
-const GATEWAY_WS = "ws://127.0.0.1:8787/voice";
+// Gateway WebSocket URL.
+//   - Production: set VITE_GATEWAY_WS in your host's env (e.g. Vercel)
+//                 to wss://<your-railway>.up.railway.app/voice
+//   - Dev:        falls back to local orchestrator on 127.0.0.1:8787
+const GATEWAY_WS =
+  (import.meta.env.VITE_GATEWAY_WS as string | undefined) ??
+  (import.meta.env.PROD
+    ? "wss://jarvisdemo.up.railway.app/voice"
+    : "ws://127.0.0.1:8787/voice");
 
 const HEX_GRID = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zM28 100L0 84V50l28-16 28 16v34L28 100z' fill='none' stroke='rgba(0%2C180%2C255%2C0.04)' stroke-width='0.5'/%3E%3C/svg%3E")`;
 

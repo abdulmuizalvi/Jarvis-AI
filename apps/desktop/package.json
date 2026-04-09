@@ -6,7 +6,9 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "build": "tsc && vite build",
+    "build:web": "tsc && vite build",
+    "build:desktop": "tsc && vite build && electron-builder",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

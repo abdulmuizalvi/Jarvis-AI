@@ -15,12 +15,14 @@ aria:
     utterance_end_ms: 1200
 
     # Conversation engagement:
-    # Once the user addresses JARVIS, it stays "engaged" (no wake word
-    # needed) until one of these conditions ends the conversation:
-    #   1. engagement_timeout_ms of silence with no user speech
-    #   2. User says a disengagement phrase ("that's all", "goodbye", etc.)
-    #   3. JARVIS detects the user is talking to someone else
-    engagement_timeout_ms: 30000
+    # JARVIS does NOT require a wake word — every utterance is classified by
+    # a small LLM ("address_jarvis" vs "ignore"). Once engaged, JARVIS stays
+    # in active mode until:
+    #   1. engagement_timeout_ms of silence (default 2 minutes)
+    #   2. User says an explicit disengagement phrase ("goodbye", "that's all")
+    #   3. JARVIS detects two consecutive utterances directed elsewhere
+    #      (hysteresis prevents single-utterance false positives)
+    engagement_timeout_ms: 120000
 
   models:
     provider: "groq"
@@ -38,6 +40,10 @@ aria:
     asr:
       provider: "deepgram"
       model: "nova-3"
+      # "multi" enables Deepgram's multilingual code-switching mode.
+      # Supports English, Hindi, Spanish, French, German, Portuguese, etc.
+      # Override to "hi" for Hindi/Urdu only, or "en" for English only.
+      language: "multi"
       streaming: true
       interim_results: true
       # Endpointing kept generous — final transcripts are coalesced into

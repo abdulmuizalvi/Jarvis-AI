@@ -1,23 +1,25 @@
 /**
  * VoiceSession — full-duplex voice conversation with JARVIS.
  *
- * ─── Conversation State Machine ────────────────────────────────────────────
+ * ─── Conversation State Machine (wake-word-free) ───────────────────────────
  *
- *   AMBIENT ──(wake word heard)──▶ ENGAGED ──(disengage trigger)──▶ AMBIENT
+ *   AMBIENT ──(LLM intent = address_jarvis)──▶ ENGAGED ──(triggers)──▶ AMBIENT
  *
  *   AMBIENT:
  *     - Always buffers and saves every utterance to memory.
- *     - JARVIS only speaks if the wake word "jarvis" is detected.
- *     - Silently logs everything else as ambient context.
+ *     - Every utterance runs through an LLM intent classifier.
+ *     - If the classifier decides the user is addressing JARVIS, JARVIS
+ *       responds and the conversation engages.
+ *     - The wake word "jarvis" is still a fast-path (skips the classifier),
+ *       but is no longer required.
  *
  *   ENGAGED:
- *     - Active conversation. JARVIS responds to everything the user says
- *       without needing the wake word again.
+ *     - Active conversation. JARVIS responds to everything the user says.
  *     - Returns to AMBIENT when:
- *         1. engagement_timeout_ms of silence (no user speech received)
- *         2. User says a disengagement phrase ("that's all", "goodbye", etc.)
- *         3. Audience detector classifies utterance as directed at someone
- *            else — JARVIS goes quiet and logs it as ambient.
+ *         1. engagement_timeout_ms of silence (default 120s)
+ *         2. User says a disengagement phrase ("goodbye", "that's all")
+ *         3. TWO consecutive utterances are detected as directed elsewhere
+ *            (hysteresis — single false positives don't drop the conversation)
  *
  *   TEXT input: always responds regardless of state (explicit intent).
  *
@@ -69,6 +71,9 @@ const DISENGAGE_RE =
 const THIRD_PARTY_RE =
   /^(?:hey |hi |okay |ok |excuse me )?([A-Z][a-z]{1,14})\s*[,!]/;
 
+/** Minimum utterance length (chars) to bother classifying. Below this, ignore. */
+const MIN_CLASSIFY_LEN = 4;
+
 type ConvState = "ambient" | "engaged";
 
 export class VoiceSession {
@@ -87,7 +92,10 @@ export class VoiceSession {
   /** Timer handle for engagement timeout. */
   private engagementTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** Wake-word regex (includes aliases). */
+  /** Hysteresis counter — consecutive utterances detected as third-party. */
+  private thirdPartyStreak = 0;
+
+  /** Wake-word regex (still a fast-path even though no longer required). */
   private wakeWordRe: RegExp;
 
   /** Lightweight Groq client for audience classification. */
@@ -102,6 +110,7 @@ export class VoiceSession {
     this.asr = new DeepgramASR({
       apiKey: process.env.DEEPGRAM_API_KEY ?? "",
       model: deps.config.aria.voice.asr.model,
+      language: deps.config.aria.voice.asr.language ?? "multi",
       endpointingMs: deps.config.aria.voice.asr.endpointing_ms,
       utteranceEndMs: deps.config.aria.runtime.utterance_end_ms ?? 1500,
       onPartial: (t) => this.send({ type: "partial_transcript", text: t }),
@@ -210,97 +219,173 @@ export class VoiceSession {
     }
   }
 
-  // ─────────────────── ambient mode ───────────────────
+  // ─────────────────── ambient mode (no wake word required) ──────────
 
   private async handleAmbient(utterance: string) {
-    const hasWake = this.wakeWordRe.test(utterance);
-    if (!hasWake) {
-      this.send({ type: "ambient_logged", text: utterance });
-      this.deps.logger.info({ utterance }, "ambient — no wake word");
+    // Fast path: explicit wake word — engage instantly, skip classifier.
+    if (this.wakeWordRe.test(utterance)) {
+      const cleaned = utterance.replace(this.wakeWordRe, "").replace(/^[\s,.!?]+/, "").trim();
+      const message = cleaned.length >= 2 ? cleaned : utterance;
+      this.engage();
+      await this.respondTo(message, { source: "voice", wakeWordHeard: true });
       return;
     }
 
-    // Strip the wake word so JARVIS doesn't waste tokens on it.
-    const cleaned = utterance.replace(this.wakeWordRe, "").replace(/^[\s,.!?]+/, "").trim();
-    const message = cleaned.length >= 2 ? cleaned : utterance;
+    // Too short — almost always background noise, never engage on these.
+    if (utterance.length < MIN_CLASSIFY_LEN) {
+      this.send({ type: "ambient_logged", text: utterance });
+      return;
+    }
 
-    this.engage();
-    await this.respondTo(message, { source: "voice", wakeWordHeard: true });
+    // Smart engagement detection — let the LLM decide if the user is
+    // addressing JARVIS or someone/something else.
+    const intent = await this.classifyIntent(utterance, "ambient");
+
+    if (intent === "address_jarvis") {
+      this.deps.logger.info({ utterance }, "ambient — LLM detected user addressing JARVIS, engaging");
+      this.engage();
+      await this.respondTo(utterance, { source: "voice" });
+    } else {
+      this.send({ type: "ambient_logged", text: utterance });
+      this.deps.logger.info({ utterance }, "ambient — not addressed to JARVIS");
+    }
   }
 
   // ─────────────────── engaged mode ───────────────────
 
   private async handleEngaged(utterance: string) {
-    // 1. Explicit disengagement phrase.
+    // 1. Explicit disengagement phrase ("goodbye", "thanks jarvis").
     if (DISENGAGE_RE.test(utterance)) {
       this.deps.logger.info({ utterance }, "disengagement phrase — going ambient");
       this.disengage();
       return;
     }
 
-    // 2. Audience detection — is the user talking to someone else?
-    const directedElsewhere = await this.isDirectedElsewhere(utterance);
-    if (directedElsewhere) {
+    // 2. Smart audience detection with HYSTERESIS — require TWO consecutive
+    //    "directed elsewhere" classifications before disengaging. This stops
+    //    JARVIS from dropping out of the conversation on a single ambiguous
+    //    sentence.
+    const intent = await this.classifyIntent(utterance, "engaged");
+
+    if (intent !== "address_jarvis") {
+      this.thirdPartyStreak += 1;
       this.send({ type: "ambient_logged", text: utterance });
-      this.deps.logger.info({ utterance }, "engaged — detected talking to someone else, going ambient");
-      this.disengage();
+      this.deps.logger.info(
+        { utterance, streak: this.thirdPartyStreak },
+        "engaged — utterance not directed at JARVIS",
+      );
+
+      if (this.thirdPartyStreak >= 2) {
+        this.deps.logger.info("engaged — 2 consecutive misses, going ambient");
+        this.disengage();
+      } else {
+        // First strike — stay engaged, just don't respond to this turn.
+        this.resetEngagementTimer();
+      }
       return;
     }
 
-    // 3. Active conversation — reset timer and respond.
+    // 3. Active conversation — reset streak, reset timer, respond.
+    this.thirdPartyStreak = 0;
     this.resetEngagementTimer();
     await this.respondTo(utterance, { source: "voice" });
   }
 
-  // ─────────────────── audience detection ───────────────────
+  // ─────────────────── intent classifier ───────────────────
 
   /**
-   * Determines whether the utterance is directed at someone other than JARVIS.
+   * Determines whether an utterance is being directed at JARVIS.
+   *
+   * Returns "address_jarvis" or "ignore".
    *
    * Two-layer check:
-   *   1. Fast regex — catches obvious "Hey [Name]," patterns (< 1ms).
-   *   2. LLM classifier — llama-3.1-8b-instant via Groq (~200ms).
-   *      Only called when the regex doesn't give a clear answer.
+   *   1. Fast regex — wake word always engages, "Hey [OtherName]," never does.
+   *   2. LLM classifier — llama-3.1-8b-instant via Groq (~200ms). Uses
+   *      different bias depending on whether we are already engaged.
+   *
+   * Engaged-mode bias is more lenient (defaults to address_jarvis on doubt)
+   * because the user is mid-conversation. Ambient bias is stricter (defaults
+   * to ignore on doubt) so JARVIS doesn't randomly interject.
    */
-  private async isDirectedElsewhere(utterance: string): Promise<boolean> {
-    // Fast path: explicitly addressing JARVIS.
-    if (this.wakeWordRe.test(utterance)) return false;
+  private async classifyIntent(
+    utterance: string,
+    mode: "ambient" | "engaged",
+  ): Promise<"address_jarvis" | "ignore"> {
+    // Fast path: wake word always wins.
+    if (this.wakeWordRe.test(utterance)) return "address_jarvis";
 
-    // Fast path: "Hey [OtherName]," at the start.
+    // Fast path: "Hey [OtherName]," at the start → never directed at JARVIS.
     const thirdPartyMatch = utterance.match(THIRD_PARTY_RE);
     if (thirdPartyMatch) {
       const name = thirdPartyMatch[1].toLowerCase();
       const wakeAliases = this.deps.config.aria.runtime.wake_word_aliases ?? ["jarvis"];
-      if (!wakeAliases.includes(name)) return true;
+      if (!wakeAliases.includes(name)) return "ignore";
     }
 
-    // LLM classifier for ambiguous cases.
-    if (!this.classifier) return false;
+    if (!this.classifier) {
+      // No classifier — fall back to permissive (engaged) or strict (ambient).
+      return mode === "engaged" ? "address_jarvis" : "ignore";
+    }
+
+    const systemPrompt =
+      mode === "engaged"
+        ? // Already in conversation — be lenient. Only "ignore" on clear
+          // signs the user is talking to someone else.
+          `You are a strict classifier in a multilingual voice assistant.
+The user is currently mid-conversation with JARVIS, an AI assistant.
+Decide if the next utterance is part of that conversation, OR clearly directed at someone else.
+
+Reply with EXACTLY one word: "yes" or "no".
+
+"yes" = continuing the conversation with JARVIS (questions, answers, follow-ups, commands, acknowledgements like "ok" / "right" / "got it").
+"no"  = clearly speaking to another human in the room or on a phone, addressing them by name, or reading something aloud to them.
+
+When uncertain, answer "yes". Hindi, Urdu, Arabic, Spanish and other languages all count.`
+        : // Cold start — be selective. Only engage if the utterance looks
+          // like a real question/command directed at an assistant.
+          `You are a strict classifier in a multilingual voice assistant.
+Decide if a transcribed utterance is being directed at JARVIS, an always-listening AI assistant, OR is background speech / talking to a human.
+
+Reply with EXACTLY one word: "yes" or "no".
+
+"yes" = the user is addressing the assistant: a question, a command (timer/reminder/play/look up/search), naming JARVIS, or asking for information.
+"no"  = the user is talking to another human, on a phone call, narrating to themselves, reading something aloud, making throat sounds, or saying a fragment that wasn't meant for the assistant.
+
+When uncertain, answer "no" — JARVIS should NOT randomly interject.
+
+Examples:
+"jarvis what time is it" → yes
+"what's the weather like" → yes
+"set a timer for 5 minutes" → yes
+"remind me to call mom tomorrow" → yes
+"can you tell me about black holes" → yes
+"play some lo-fi music" → yes
+"hey michael grab the keys" → no
+"i need to remember to email her" → no
+"she said she'd be here at three" → no
+"ok let me think about that" → no
+"ummm yeah so" → no
+"mujhe kal yaad dilana" (Urdu/Hindi: "remind me tomorrow") → yes
+"abhi kya time hai" (Hindi: "what time is it now") → yes`;
 
     try {
       const res = await this.classifier.chat.completions.create({
         model: this.deps.config.aria.models.classifier ?? "llama-3.1-8b-instant",
-        max_tokens: 5,
+        max_tokens: 3,
         temperature: 0,
         messages: [
-          {
-            role: "system",
-            content:
-              "You are a classifier. Answer ONLY with 'self' or 'other'.\n" +
-              "'self' = this utterance is directed at the AI assistant (JARVIS).\n" +
-              "'other' = the speaker is talking to another person in the room, on the phone, or to themselves.\n" +
-              "When in doubt, say 'self'.",
-          },
-          { role: "user", content: `Utterance: "${utterance}"` },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: utterance },
         ],
       });
 
-      const verdict = res.choices[0]?.message?.content?.trim().toLowerCase() ?? "self";
-      this.deps.logger.debug({ utterance, verdict }, "audience classification");
-      return verdict === "other";
+      const verdict = res.choices[0]?.message?.content?.trim().toLowerCase() ?? "no";
+      const addressed = verdict.startsWith("y");
+      this.deps.logger.debug({ utterance, mode, verdict }, "intent classification");
+      return addressed ? "address_jarvis" : "ignore";
     } catch (err) {
-      // On classifier failure, assume engaged — safer than ignoring the user.
-      return false;
+      // On classifier failure: stay engaged if engaged, stay quiet if ambient.
+      return mode === "engaged" ? "address_jarvis" : "ignore";
     }
   }
 
@@ -308,6 +393,7 @@ export class VoiceSession {
 
   private engage() {
     this.convState = "engaged";
+    this.thirdPartyStreak = 0;
     this.send({ type: "conv_state", conv: "engaged" });
     this.deps.logger.info("conversation engaged");
     this.resetEngagementTimer();
@@ -315,6 +401,7 @@ export class VoiceSession {
 
   private disengage() {
     this.convState = "ambient";
+    this.thirdPartyStreak = 0;
     this.clearEngagementTimer();
     this.send({ type: "conv_state", conv: "ambient" });
     this.deps.logger.info("conversation disengaged — back to ambient");

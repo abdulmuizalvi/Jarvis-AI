@@ -13,6 +13,14 @@ import { createClient, LiveTranscriptionEvents, type LiveClient } from "@deepgra
 export interface ASROptions {
   apiKey: string;
   model: string;
+  /**
+   * Language code for transcription.
+   *   "multi" → Deepgram multilingual code-switching mode (Nova-3 supports
+   *             English/Spanish/French/German/Hindi/etc. in a single stream).
+   *   "en" | "hi" | "ur" | "es" | … → force a specific language.
+   *   undefined → defaults to "multi".
+   */
+  language?: string;
   endpointingMs: number;
   utteranceEndMs: number;
   sampleRate?: number;
@@ -35,7 +43,11 @@ export class DeepgramASR {
 
     this.live = dg.listen.live({
       model: this.opts.model,
-      language: "en",
+      // Multilingual by default — Deepgram's "multi" enables code-switching
+      // across English, Hindi, Spanish, French, German, Portuguese, and more.
+      // For Urdu, set language to "hi" (Hindi recognizer handles most Urdu)
+      // or "multi" for auto-detection.
+      language: this.opts.language ?? "multi",
       smart_format: true,
       interim_results: true,
       endpointing: this.opts.endpointingMs,

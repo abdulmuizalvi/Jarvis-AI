@@ -10,3 +10,5 @@ data/
 .vite/
 .turbo/
 coverage/
+
+.vercel
