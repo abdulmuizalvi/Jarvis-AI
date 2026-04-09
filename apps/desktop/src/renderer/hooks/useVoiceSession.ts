@@ -35,6 +35,18 @@ export function useVoiceSession(wsUrl: string) {
   const [response, setResponse] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [diag, setDiag] = useState<string>("");
+  // Counters that prove the audio path is alive end-to-end. Visible in the
+  // HUD so the user can see whether mic bytes are leaving and replies are
+  // coming back without opening DevTools. The mic counter is throttled to
+  // once per second by the flush interval below to avoid 50 re-renders/sec.
+  const [stats, setStats] = useState({
+    micFrames: 0,
+    micBytes: 0,
+    msgsIn: 0,
+    speechChunks: 0,
+    audioChunks: 0,
+    ttsSpoken: 0,
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
   const micCtxRef = useRef<AudioContext | null>(null);
@@ -157,6 +169,8 @@ export function useVoiceSession(wsUrl: string) {
 
     ws.onmessage = (evt) => {
       const msg = JSON.parse(evt.data);
+      // Bump message counter on every frame
+      setStats((s) => ({ ...s, msgsIn: s.msgsIn + 1 }));
       switch (msg.type) {
         case "state": setState(msg.state); break;
         case "conv_state": setConvState(msg.conv); break;
@@ -167,10 +181,12 @@ export function useVoiceSession(wsUrl: string) {
           if (msg.type === "final_transcript") setResponse("");
           break;
         case "speech_chunk":
+          setStats((s) => ({ ...s, speechChunks: s.speechChunks + 1 }));
           setResponse((prev) => prev + msg.text);
           speakBrowser(msg.text);
           break;
         case "audio_chunk":
+          setStats((s) => ({ ...s, audioChunks: s.audioChunks + 1 }));
           enqueueAudio(msg.b64);
           break;
         case "tts_cancel":
@@ -259,10 +275,28 @@ export function useVoiceSession(wsUrl: string) {
     const node = new AudioWorkletNode(ctx, "pcm-downsampler");
     workletNodeRef.current = node;
 
+    // Local accumulators — flush to React state once per second to avoid
+    // re-rendering 50 times a second per audio frame.
+    let pendingFrames = 0;
+    let pendingBytes = 0;
+    const flushHandle = window.setInterval(() => {
+      if (pendingFrames === 0) return;
+      const f = pendingFrames;
+      const b = pendingBytes;
+      pendingFrames = 0;
+      pendingBytes = 0;
+      setStats((s) => ({ ...s, micFrames: s.micFrames + f, micBytes: s.micBytes + b }));
+    }, 1000);
+    // Stash the handle so stopMicCapture can clear it.
+    (node as unknown as { __flushHandle: number }).__flushHandle = flushHandle;
+
     node.port.onmessage = (ev: MessageEvent) => {
       if (wsRef.current?.readyState !== 1) return;
       // The worklet transfers an ArrayBuffer of PCM16LE — forward as binary.
-      wsRef.current.send(ev.data as ArrayBuffer);
+      const buf = ev.data as ArrayBuffer;
+      wsRef.current.send(buf);
+      pendingFrames += 1;
+      pendingBytes += buf.byteLength;
     };
 
     source.connect(node);
@@ -274,6 +308,11 @@ export function useVoiceSession(wsUrl: string) {
   }
 
   function stopMicCapture() {
+    const node = workletNodeRef.current as unknown as { __flushHandle?: number } | null;
+    if (node?.__flushHandle) {
+      window.clearInterval(node.__flushHandle);
+      node.__flushHandle = undefined;
+    }
     try { workletNodeRef.current?.disconnect(); } catch { /* ignore */ }
     try { micSourceRef.current?.disconnect(); } catch { /* ignore */ }
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -310,6 +349,13 @@ export function useVoiceSession(wsUrl: string) {
     utter.rate = device.isIOS ? 1.05 : 1.0;
     utter.pitch = device.isIOS ? 1.0 : 0.85;
     utter.volume = 1.0;
+    utter.onstart = () => {
+      setStats((s) => ({ ...s, ttsSpoken: s.ttsSpoken + 1 }));
+    };
+    utter.onerror = (ev) => {
+      console.warn("[voice] TTS error", ev);
+      setError(`TTS blocked: ${(ev as SpeechSynthesisErrorEvent).error ?? "unknown"}`);
+    };
     window.speechSynthesis.speak(utter);
   }
 
@@ -355,5 +401,5 @@ export function useVoiceSession(wsUrl: string) {
 
   useEffect(() => () => stop(), [stop]);
 
-  return { state, convState, affect, transcript, response, error, diag, start, stop, sendText };
+  return { state, convState, affect, transcript, response, error, diag, stats, start, stop, sendText };
 }

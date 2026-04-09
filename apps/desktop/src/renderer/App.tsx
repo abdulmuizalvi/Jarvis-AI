@@ -18,7 +18,7 @@ const GATEWAY_WS =
 const HEX_GRID = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zM28 100L0 84V50l28-16 28 16v34L28 100z' fill='none' stroke='rgba(0%2C180%2C255%2C0.04)' stroke-width='0.5'/%3E%3C/svg%3E")`;
 
 export function App() {
-  const { state, convState, affect, transcript, response, error, diag, start, stop, sendText } =
+  const { state, convState, affect, transcript, response, error, diag, stats, start, stop, sendText } =
     useVoiceSession(GATEWAY_WS);
 
   const engaged = convState === "engaged";
@@ -82,6 +82,37 @@ export function App() {
 
       {/* ── HUD chrome layer (brackets, arcs, scan, waveform) ─ */}
       <HudFrame state={state} convState={convState} affect={affect} narrow={narrow} />
+
+      {/* ── Stats panel (only when a session has started) ───── */}
+      {state !== "idle" && !narrow && (
+        <div style={{
+          position: "absolute",
+          // Sit just above the bottom-right "groq · llama 3.1" chip in HudFrame
+          bottom: `calc(${44}px + env(safe-area-inset-bottom))`,
+          right: `calc(${24}px + env(safe-area-inset-right))`,
+          fontSize: 9,
+          letterSpacing: 0.6,
+          lineHeight: 1.55,
+          color: "rgba(0,180,255,0.55)",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          textTransform: "lowercase",
+          textAlign: "right",
+          zIndex: 40,
+          pointerEvents: "none",
+        }}>
+          <div style={{ color: stats.micFrames > 0 ? "rgba(0,220,180,0.85)" : "rgba(255,120,120,0.85)" }}>
+            mic out · {stats.micFrames}f · {(stats.micBytes / 1024).toFixed(1)}kb
+          </div>
+          <div style={{ color: stats.msgsIn > 0 ? "rgba(0,220,180,0.85)" : "rgba(255,120,120,0.85)" }}>
+            ws in · {stats.msgsIn} msgs
+          </div>
+          <div>speech_chunk · {stats.speechChunks}</div>
+          <div>audio_chunk · {stats.audioChunks}</div>
+          <div style={{ color: stats.speechChunks > 0 && stats.ttsSpoken === 0 ? "rgba(255,180,80,0.9)" : undefined }}>
+            tts spoken · {stats.ttsSpoken}
+          </div>
+        </div>
+      )}
 
       {/* ── Diagnostic strip (under JARVIS title) ────────────── */}
       {diag && (
