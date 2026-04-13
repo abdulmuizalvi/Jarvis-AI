@@ -28,7 +28,7 @@ aria:
     provider: "groq"
     # llama-3.3-70b-versatile: 100K TPD free (premium, use when available)
     # llama-3.1-8b-instant:    500K TPD free (fast fallback, always available)
-    reasoning_primary: "llama-3.1-8b-instant"
+    reasoning_primary: "llama-3.3-70b-versatile"
     reasoning_fast: "llama-3.1-8b-instant"
     classifier: "llama-3.1-8b-instant"
     extended_thinking: false
