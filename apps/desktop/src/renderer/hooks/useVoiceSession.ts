@@ -140,6 +140,26 @@ export function useVoiceSession(wsUrl: string) {
       console.log("[voice] WS open");
       setDiag("ws open · requesting mic");
       ws.send(JSON.stringify({ type: "start" }));
+
+      // Send timezone (free, no permission) + geolocation (one-time prompt).
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      ws.send(JSON.stringify({ type: "context", timezone: tz }));
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({
+                type: "context",
+                timezone: tz,
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+              }));
+            }
+          },
+          () => { /* permission denied — timezone is enough */ },
+          { timeout: 5000, maximumAge: 300000 },
+        );
+      }
       try {
         await startMicCapture();
         setDiag("mic ok · listening");

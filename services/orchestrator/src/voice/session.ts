@@ -83,6 +83,9 @@ export class VoiceSession {
   private active = false;
   private speaking = false;
 
+  /** User location context sent by the browser. */
+  private userContext: { timezone?: string; lat?: number; lng?: number } = {};
+
   /** ASR fragment buffer for the current utterance. */
   private utteranceBuffer: string[] = [];
 
@@ -167,6 +170,12 @@ export class VoiceSession {
           // so JARVIS responds to everything without requiring wake word or
           // passing the ambient classifier.
           if (this.convState === "ambient") this.engage();
+        } else if (msg.type === "context") {
+          // Browser sends timezone and optional geolocation.
+          if (msg.timezone) this.userContext.timezone = msg.timezone;
+          if (msg.lat != null) this.userContext.lat = msg.lat;
+          if (msg.lng != null) this.userContext.lng = msg.lng;
+          this.deps.logger.info({ ctx: this.userContext }, "user context updated");
         } else if (msg.type === "text") {
           await this.respondTo(msg.text, { source: "text" });
         } else if (msg.type === "utterance_test") {
@@ -434,6 +443,7 @@ Examples:
         userText: text,
         affect,
         convState: this.convState,
+        userContext: this.userContext,
         onToken: (chunk) => {
           this.send({ type: "speech_chunk", text: chunk });
           if (this.ttsMode === "elevenlabs" && this.tts) {

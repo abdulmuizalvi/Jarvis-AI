@@ -24,6 +24,7 @@ export interface ReasonRequest {
   userText: string;
   affect: Affect;
   convState?: "ambient" | "engaged";
+  userContext?: { timezone?: string; lat?: number; lng?: number };
   onToken: (text: string) => void;
   onToolUse?: (name: string, input: unknown) => Promise<unknown>;
 }
@@ -82,9 +83,14 @@ export class ReasoningCore {
       : "(no prior memories)";
 
     const now = new Date();
+    const loc = req.userContext ?? {};
+    const locationBlock = loc.timezone
+      ? `<user_location>timezone: ${loc.timezone}${loc.lat != null ? `, lat: ${loc.lat}, lng: ${loc.lng}` : ""}</user_location>\n`
+      : "";
     const systemMessage =
       this.systemPrompt +
       `\n\n<current_time>${now.toISOString()}</current_time>\n` +
+      locationBlock +
       `<memory>\n${memoryBlock}\n</memory>\n` +
       `<affect>${JSON.stringify(req.affect)}</affect>\n` +
       `<style>${JSON.stringify(style)}</style>\n` +
