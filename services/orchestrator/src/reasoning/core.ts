@@ -84,12 +84,21 @@ export class ReasoningCore {
 
     const now = new Date();
     const loc = req.userContext ?? {};
+    // Format time in user's timezone so JARVIS gives accurate local time.
+    let timeStr: string;
+    try {
+      timeStr = loc.timezone
+        ? now.toLocaleString("en-US", { timeZone: loc.timezone, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true })
+        : now.toISOString();
+    } catch {
+      timeStr = now.toISOString();
+    }
     const locationBlock = loc.timezone
       ? `<user_location>timezone: ${loc.timezone}${loc.lat != null ? `, lat: ${loc.lat}, lng: ${loc.lng}` : ""}</user_location>\n`
       : "";
     const systemMessage =
       this.systemPrompt +
-      `\n\n<current_time>${now.toISOString()}</current_time>\n` +
+      `\n\n<current_time>${timeStr}</current_time>\n` +
       locationBlock +
       `<memory>\n${memoryBlock}\n</memory>\n` +
       `<affect>${JSON.stringify(req.affect)}</affect>\n` +
