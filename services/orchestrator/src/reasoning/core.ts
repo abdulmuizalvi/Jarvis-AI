@@ -21,6 +21,7 @@ import { ARIA_TOOLS } from "../agent/tools.js";
 
 export interface ReasonRequest {
   sessionId: string;
+  userId?: string;
   userText: string;
   affect: Affect;
   convState?: "ambient" | "engaged";
@@ -75,16 +76,45 @@ export class ReasoningCore {
     if (!this.groq) throw new Error("groq client not initialized");
 
     const style = styleFromAffect(req.affect);
-    const memories = this.memory.retrieve(req.userText, this.config.aria.memory.retrieval_top_k);
+    const userId = req.userId;
+    const memories = this.memory.retrieve(req.userText, this.config.aria.memory.retrieval_top_k, userId);
     const recent = this.memory.recentTurns(req.sessionId, this.config.aria.memory.working_window_turns);
 
     const memoryBlock = memories.length
       ? memories.map((m) => `- [${m.kind}] ${m.content}`).join("\n")
       : "(no prior memories)";
 
+    // ── Cross-session context ──────────────────────────
+    let crossSessionBlock = "";
+    let adaptationsBlock = "";
+    let qualityNote = "";
+
+    if (userId && userId !== "anonymous") {
+      // Previous conversations with this user.
+      const history = this.memory.userHistory(userId, 10);
+      if (history.length > 0) {
+        const lines = history.map((t: any) =>
+          `${t.role === "user" ? "User" : "You"}: ${(t.content as string).slice(0, 100)}`
+        ).join("\n");
+        crossSessionBlock = `<previous_conversations>\nYou've talked to this user before. Recent history:\n${lines}\n</previous_conversations>\n`;
+      }
+
+      // Self-written adaptations (JARVIS's own notes about this user).
+      const adaptations = this.memory.getAdaptations(userId, 15);
+      if (adaptations.length > 0) {
+        const notes = adaptations.map((a) => `- [${a.category}] ${a.content}`).join("\n");
+        adaptationsBlock = `<self_notes>\nYour own notes about this user (you wrote these yourself based on past interactions):\n${notes}\n</self_notes>\n`;
+      }
+
+      // Quality score — how well you've been doing.
+      const avg = this.memory.avgScore(userId);
+      if (avg < 0.4) {
+        qualityNote = `<quality_alert>Your recent interactions with this user scored low (${avg.toFixed(2)}/1.0). They've been correcting you or repeating themselves. Be more careful, listen closer, give better answers.</quality_alert>\n`;
+      }
+    }
+
     const now = new Date();
     const loc = req.userContext ?? {};
-    // Format time in user's timezone so JARVIS gives accurate local time.
     let timeStr: string;
     try {
       timeStr = loc.timezone
@@ -103,11 +133,14 @@ export class ReasoningCore {
       this.systemPrompt +
       `\n\n<current_time>${timeStr}</current_time>\n` +
       locationBlock +
+      crossSessionBlock +
+      adaptationsBlock +
+      qualityNote +
       `<memory>\n${memoryBlock}\n</memory>\n` +
       `<affect>${JSON.stringify(req.affect)}</affect>\n` +
       `<style>${JSON.stringify(style)}</style>\n` +
       `<conv_state>${req.convState ?? "engaged"}</conv_state>\n\n` +
-      `IMPORTANT REMINDER: Respond naturally with full, complete answers. Never give one-word or one-sentence answers unless it's a simple yes/no question. Speak like a real person having a real conversation.`;
+      `IMPORTANT: Respond naturally with full, complete answers. Speak like a real person having a conversation. Use your self_notes to improve — avoid mistakes you've made before with this user.`;
 
     // Filter out very short assistant turns so the model doesn't mimic one-word patterns.
     const filteredRecent = recent.filter((t: any) =>

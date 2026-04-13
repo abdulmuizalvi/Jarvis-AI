@@ -83,8 +83,15 @@ export class VoiceSession {
   private active = false;
   private speaking = false;
 
+  /** Persistent user ID for cross-session memory. */
+  private userId: string = "anonymous";
+
   /** User location context sent by the browser. */
   private userContext: { timezone?: string; lat?: number; lng?: number; city?: string } = {};
+
+  /** Last assistant response — used for interaction scoring. */
+  private lastAssistantText: string = "";
+  private lastUserText: string = "";
 
   /** ASR fragment buffer for the current utterance. */
   private utteranceBuffer: string[] = [];
@@ -166,9 +173,11 @@ export class VoiceSession {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "start") {
-          // User explicitly clicked "engage" — enter engaged mode immediately
-          // so JARVIS responds to everything without requiring wake word or
-          // passing the ambient classifier.
+          // Capture persistent user ID for cross-session memory.
+          if (msg.userId) {
+            this.userId = msg.userId;
+            this.deps.logger.info({ userId: this.userId }, "user identified");
+          }
           if (this.convState === "ambient") this.engage();
         } else if (msg.type === "context") {
           // Browser sends timezone and optional geolocation.
@@ -222,9 +231,12 @@ export class VoiceSession {
     this.send({ type: "final_transcript", text: utterance });
     this.deps.logger.info({ utterance, convState: this.convState }, "utterance committed");
 
-    // ── Always save to memory ───────────────────────────────────────────
-    this.deps.memory.remember("episodic", utterance, { tags: ["ambient", "voice"], salience: 0.3 });
-    this.deps.memory.recordTurn(this.deps.id, "user", utterance, { source: "voice" });
+    // ── Always save to memory (user-specific) ────────────────────────
+    this.deps.memory.remember("episodic", utterance, { tags: ["ambient", "voice"], salience: 0.3, userId: this.userId });
+    this.deps.memory.recordTurn(this.deps.id, "user", utterance, { source: "voice" }, this.userId);
+
+    // ── Score previous interaction if user seems to be correcting/repeating ──
+    this.scoreInteraction(utterance);
 
     // ── Route based on conversation state ──────────────────────────────
     if (this.convState === "ambient") {
@@ -450,6 +462,7 @@ When uncertain, answer "no". Examples:
 
       const result = await this.deps.reasoner.reason({
         sessionId: this.deps.id,
+        userId: this.userId,
         userText: text,
         affect,
         convState: this.convState,
@@ -464,6 +477,11 @@ When uncertain, answer "no". Examples:
         },
       });
 
+      // Track for scoring + memory.
+      this.lastUserText = text;
+      this.lastAssistantText = result.text;
+      this.deps.memory.recordTurn(this.deps.id, "assistant", result.text, {}, this.userId);
+
       this.deps.logger.info({ confidence: result.confidence, len: result.text.length }, "assistant done");
 
       // Keep the conversation alive after each JARVIS response.
@@ -477,6 +495,66 @@ When uncertain, answer "no". Examples:
       this.send({ type: "state", state: "listening" });
       this.send({ type: "done" });
     }
+  }
+
+  // ─────────────────── self-improvement ───────────────────
+
+  /**
+   * Score the previous interaction based on signals in the new utterance.
+   * If the user repeats themselves, corrects JARVIS, or says "no/wrong",
+   * that's a negative signal. Positive flow = positive score.
+   */
+  private scoreInteraction(newUtterance: string) {
+    if (!this.lastAssistantText || !this.lastUserText) return;
+
+    const lower = newUtterance.toLowerCase();
+    let score = 0.6; // neutral-positive baseline
+    let signal = "neutral";
+
+    // Negative signals
+    if (/\b(no|wrong|not right|incorrect|that's not|you're wrong|nah)\b/i.test(lower)) {
+      score = 0.2;
+      signal = "correction";
+      // JARVIS learns from correction: write an adaptation.
+      this.deps.memory.addAdaptation(
+        this.userId,
+        "correction",
+        `User said "${this.lastUserText}" and I answered "${this.lastAssistantText.slice(0, 100)}..." — user corrected me with "${newUtterance.slice(0, 100)}"`,
+        0.8,
+      );
+    } else if (this.isSimilar(newUtterance, this.lastUserText)) {
+      score = 0.3;
+      signal = "repeat";
+      // User had to repeat — JARVIS didn't understand or respond well.
+      this.deps.memory.addAdaptation(
+        this.userId,
+        "self_note",
+        `User repeated "${this.lastUserText.slice(0, 80)}" — I probably didn't answer well the first time.`,
+        0.6,
+      );
+    } else if (/\b(thanks|perfect|exactly|great|nice|good|yes|yeah|yep|correct)\b/i.test(lower)) {
+      score = 0.9;
+      signal = "positive";
+    }
+
+    this.deps.memory.recordScore(
+      this.userId,
+      this.deps.id,
+      this.lastUserText,
+      this.lastAssistantText.slice(0, 200),
+      score,
+      signal,
+    );
+  }
+
+  /** Simple similarity check — are two utterances >60% the same words? */
+  private isSimilar(a: string, b: string): boolean {
+    const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+    const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+    if (wordsA.size === 0 || wordsB.size === 0) return false;
+    let overlap = 0;
+    for (const w of wordsA) if (wordsB.has(w)) overlap++;
+    return overlap / Math.max(wordsA.size, wordsB.size) > 0.6;
   }
 
   private send(obj: object) {

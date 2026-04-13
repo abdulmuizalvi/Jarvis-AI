@@ -15,6 +15,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getDevice } from "../lib/device";
 
+/** Persistent user ID — survives page reloads so JARVIS remembers you. */
+function getUserId(): string {
+  const KEY = "jarvis_user_id";
+  let id = localStorage.getItem(KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(KEY, id);
+  }
+  return id;
+}
+
 export type SessionState = "idle" | "listening" | "thinking" | "speaking";
 
 export interface AffectState {
@@ -139,7 +150,7 @@ export function useVoiceSession(wsUrl: string) {
       window.clearTimeout(openTimeout);
       console.log("[voice] WS open");
       setDiag("ws open · requesting mic");
-      ws.send(JSON.stringify({ type: "start" }));
+      ws.send(JSON.stringify({ type: "start", userId: getUserId() }));
 
       // Send timezone + geolocation so JARVIS knows where you are.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
