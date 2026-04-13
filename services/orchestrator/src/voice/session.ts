@@ -266,32 +266,9 @@ export class VoiceSession {
       return;
     }
 
-    // 2. Smart audience detection with HYSTERESIS — require TWO consecutive
-    //    "directed elsewhere" classifications before disengaging. This stops
-    //    JARVIS from dropping out of the conversation on a single ambiguous
-    //    sentence.
-    const intent = await this.classifyIntent(utterance, "engaged");
-
-    if (intent !== "address_jarvis") {
-      this.thirdPartyStreak += 1;
-      this.send({ type: "ambient_logged", text: utterance });
-      this.deps.logger.info(
-        { utterance, streak: this.thirdPartyStreak },
-        "engaged — utterance not directed at JARVIS",
-      );
-
-      if (this.thirdPartyStreak >= 2) {
-        this.deps.logger.info("engaged — 2 consecutive misses, going ambient");
-        this.disengage();
-      } else {
-        // First strike — stay engaged, just don't respond to this turn.
-        this.resetEngagementTimer();
-      }
-      return;
-    }
-
-    // 3. Active conversation — reset streak, reset timer, respond.
-    this.thirdPartyStreak = 0;
+    // 2. When engaged, respond to EVERYTHING. The user explicitly started
+    //    a conversation — no classifier needed. Disengagement only happens
+    //    via explicit phrase (above) or engagement timeout (120s silence).
     this.resetEngagementTimer();
     await this.respondTo(utterance, { source: "voice" });
   }
