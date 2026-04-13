@@ -81,9 +81,11 @@ export class ReasoningCore {
       ? memories.map((m) => `- [${m.kind}] ${m.content}`).join("\n")
       : "(no prior memories)";
 
+    const now = new Date();
     const systemMessage =
       this.systemPrompt +
-      `\n\n<memory>\n${memoryBlock}\n</memory>\n` +
+      `\n\n<current_time>${now.toISOString()}</current_time>\n` +
+      `<memory>\n${memoryBlock}\n</memory>\n` +
       `<affect>${JSON.stringify(req.affect)}</affect>\n` +
       `<style>${JSON.stringify(style)}</style>\n` +
       `<conv_state>${req.convState ?? "engaged"}</conv_state>`;
