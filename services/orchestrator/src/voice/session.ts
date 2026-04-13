@@ -86,6 +86,9 @@ export class VoiceSession {
   /** Persistent user ID for cross-session memory. */
   private userId: string = "anonymous";
 
+  /** Whether user consented to data collection. */
+  private consentGiven: boolean = false;
+
   /** User location context sent by the browser. */
   private userContext: { timezone?: string; lat?: number; lng?: number; city?: string } = {};
 
@@ -173,10 +176,11 @@ export class VoiceSession {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "start") {
-          // Capture persistent user ID for cross-session memory.
+          // Capture persistent user ID + consent for cross-session memory.
           if (msg.userId) {
             this.userId = msg.userId;
-            this.deps.logger.info({ userId: this.userId }, "user identified");
+            this.consentGiven = msg.consent === "accepted";
+            this.deps.logger.info({ userId: this.userId, consent: this.consentGiven }, "user identified");
           }
           if (this.convState === "ambient") this.engage();
         } else if (msg.type === "context") {
@@ -231,12 +235,15 @@ export class VoiceSession {
     this.send({ type: "final_transcript", text: utterance });
     this.deps.logger.info({ utterance, convState: this.convState }, "utterance committed");
 
-    // ── Always save to memory (user-specific) ────────────────────────
-    this.deps.memory.remember("episodic", utterance, { tags: ["ambient", "voice"], salience: 0.3, userId: this.userId });
-    this.deps.memory.recordTurn(this.deps.id, "user", utterance, { source: "voice" }, this.userId);
-
-    // ── Score previous interaction if user seems to be correcting/repeating ──
-    this.scoreInteraction(utterance);
+    // ── Save to memory only if user consented ────────────────────────
+    if (this.consentGiven) {
+      this.deps.memory.remember("episodic", utterance, { tags: ["ambient", "voice"], salience: 0.3, userId: this.userId });
+      this.deps.memory.recordTurn(this.deps.id, "user", utterance, { source: "voice" }, this.userId);
+      this.scoreInteraction(utterance);
+    } else {
+      // Still record session-level turns (no user ID) so context works within session.
+      this.deps.memory.recordTurn(this.deps.id, "user", utterance, { source: "voice" });
+    }
 
     // ── Route based on conversation state ──────────────────────────────
     if (this.convState === "ambient") {
@@ -480,7 +487,11 @@ When uncertain, answer "no". Examples:
       // Track for scoring + memory.
       this.lastUserText = text;
       this.lastAssistantText = result.text;
-      this.deps.memory.recordTurn(this.deps.id, "assistant", result.text, {}, this.userId);
+      if (this.consentGiven) {
+        this.deps.memory.recordTurn(this.deps.id, "assistant", result.text, {}, this.userId);
+      } else {
+        this.deps.memory.recordTurn(this.deps.id, "assistant", result.text, {});
+      }
 
       this.deps.logger.info({ confidence: result.confidence, len: result.text.length }, "assistant done");
 
@@ -515,23 +526,16 @@ When uncertain, answer "no". Examples:
     if (/\b(no|wrong|not right|incorrect|that's not|you're wrong|nah)\b/i.test(lower)) {
       score = 0.2;
       signal = "correction";
-      // JARVIS learns from correction: write an adaptation.
-      this.deps.memory.addAdaptation(
-        this.userId,
-        "correction",
-        `User said "${this.lastUserText}" and I answered "${this.lastAssistantText.slice(0, 100)}..." — user corrected me with "${newUtterance.slice(0, 100)}"`,
-        0.8,
-      );
+      const correctionNote = `User said "${this.lastUserText}" and I answered "${this.lastAssistantText.slice(0, 100)}..." — user corrected me with "${newUtterance.slice(0, 100)}"`;
+      this.deps.memory.addAdaptation(this.userId, "correction", correctionNote, 0.8);
+      // Check if multiple users hit the same issue → promote to global learning.
+      this.deps.memory.promoteToGlobal("correction", correctionNote);
     } else if (this.isSimilar(newUtterance, this.lastUserText)) {
       score = 0.3;
       signal = "repeat";
-      // User had to repeat — JARVIS didn't understand or respond well.
-      this.deps.memory.addAdaptation(
-        this.userId,
-        "self_note",
-        `User repeated "${this.lastUserText.slice(0, 80)}" — I probably didn't answer well the first time.`,
-        0.6,
-      );
+      const repeatNote = `User repeated "${this.lastUserText.slice(0, 80)}" — I probably didn't answer well the first time.`;
+      this.deps.memory.addAdaptation(this.userId, "self_note", repeatNote, 0.6);
+      this.deps.memory.promoteToGlobal("self_note", repeatNote);
     } else if (/\b(thanks|perfect|exactly|great|nice|good|yes|yeah|yep|correct)\b/i.test(lower)) {
       score = 0.9;
       signal = "positive";

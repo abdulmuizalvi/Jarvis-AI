@@ -150,7 +150,12 @@ export function useVoiceSession(wsUrl: string) {
       window.clearTimeout(openTimeout);
       console.log("[voice] WS open");
       setDiag("ws open · requesting mic");
-      ws.send(JSON.stringify({ type: "start", userId: getUserId() }));
+      const consent = localStorage.getItem("jarvis_consent") ?? "pending";
+      ws.send(JSON.stringify({
+        type: "start",
+        userId: consent === "accepted" ? getUserId() : undefined,
+        consent,
+      }));
 
       // Send timezone + geolocation so JARVIS knows where you are.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;

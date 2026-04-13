@@ -255,11 +255,45 @@ export class MemoryBroker {
     return Number(res.lastInsertRowid);
   }
 
-  /** Get all adaptations for a user, sorted by confidence. */
+  /** Get all adaptations for a user + global ones, sorted by confidence. */
   getAdaptations(userId: string, limit = 20): Adaptation[] {
     return this.db.prepare(
-      `SELECT * FROM adaptations WHERE user_id = ? ORDER BY confidence DESC, created_at DESC LIMIT ?`
+      `SELECT * FROM adaptations WHERE user_id IN (?, '_global')
+       ORDER BY confidence DESC, created_at DESC LIMIT ?`
     ).all(userId, limit) as Adaptation[];
+  }
+
+  /** Get only global adaptations (learned from all users collectively). */
+  getGlobalAdaptations(limit = 15): Adaptation[] {
+    return this.db.prepare(
+      `SELECT * FROM adaptations WHERE user_id = '_global'
+       ORDER BY confidence DESC, created_at DESC LIMIT ?`
+    ).all(limit) as Adaptation[];
+  }
+
+  /**
+   * Mainframe learning: check if similar corrections exist from multiple users.
+   * If 2+ different users triggered similar adaptations, promote to global.
+   * Called after each new adaptation is written.
+   */
+  promoteToGlobal(category: Adaptation["category"], content: string) {
+    // Find how many DISTINCT users have similar adaptations in this category.
+    const keywords = content.toLowerCase().split(/\s+/).filter(w => w.length > 4).slice(0, 4);
+    if (keywords.length === 0) return;
+
+    const likeClauses = keywords.map(() => "LOWER(content) LIKE ?").join(" AND ");
+    const params = keywords.map(k => `%${k}%`);
+
+    const row = this.db.prepare(
+      `SELECT COUNT(DISTINCT user_id) as cnt FROM adaptations
+       WHERE category = ? AND user_id != '_global' AND (${likeClauses})`
+    ).get(category, ...params) as { cnt: number } | undefined;
+
+    if (row && row.cnt >= 2) {
+      // Multiple users hit this — promote to global knowledge.
+      const globalContent = `[Learned from ${row.cnt} users] ${content.slice(0, 200)}`;
+      this.addAdaptation("_global", category, globalContent, 0.9);
+    }
   }
 
   /** Remove low-confidence adaptations (self-cleanup). */

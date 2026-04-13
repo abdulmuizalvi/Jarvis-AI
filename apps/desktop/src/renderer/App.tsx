@@ -17,7 +17,20 @@ const GATEWAY_WS =
 
 const HEX_GRID = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zM28 100L0 84V50l28-16 28 16v34L28 100z' fill='none' stroke='rgba(0%2C180%2C255%2C0.04)' stroke-width='0.5'/%3E%3C/svg%3E")`;
 
+/** Privacy consent — stored in localStorage. */
+function useConsent() {
+  const KEY = "jarvis_consent";
+  const [consent, setConsent] = useState<"pending" | "accepted" | "declined">(() => {
+    if (typeof window === "undefined") return "pending";
+    return (localStorage.getItem(KEY) as "accepted" | "declined") ?? "pending";
+  });
+  const accept = () => { localStorage.setItem(KEY, "accepted"); setConsent("accepted"); };
+  const decline = () => { localStorage.setItem(KEY, "declined"); setConsent("declined"); };
+  return { consent, accept, decline };
+}
+
 export function App() {
+  const { consent, accept, decline } = useConsent();
   const { state, convState, affect, transcript, response, error, diag, stats, start, stop, sendText } =
     useVoiceSession(GATEWAY_WS);
 
@@ -246,6 +259,65 @@ export function App() {
           }}
         />
       </div>
+
+      {/* ── Privacy consent banner ────────────────── */}
+      {consent === "pending" && (
+        <div style={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          background: "rgba(4,12,24,0.95)",
+          borderTop: "1px solid rgba(0,180,255,0.15)",
+          padding: narrow ? "16px 20px" : "18px 32px",
+          display: "flex",
+          flexDirection: narrow ? "column" : "row",
+          alignItems: narrow ? "stretch" : "center",
+          gap: 14,
+          zIndex: 9999,
+          backdropFilter: "blur(12px)",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        }}>
+          <div style={{ flex: 1, fontSize: 12, color: "rgba(200,220,240,0.85)", lineHeight: 1.5 }}>
+            JARVIS uses anonymized conversation data to improve responses over time.
+            No personal data is shared externally. You can opt out and still use JARVIS — it just won't remember you across sessions.
+          </div>
+          <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+            <button
+              onClick={accept}
+              style={{
+                padding: "8px 20px",
+                fontSize: 11,
+                fontWeight: 600,
+                background: "rgba(0,180,255,0.15)",
+                border: "1px solid rgba(0,180,255,0.4)",
+                color: "rgba(0,200,255,0.95)",
+                borderRadius: 4,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Accept
+            </button>
+            <button
+              onClick={decline}
+              style={{
+                padding: "8px 20px",
+                fontSize: 11,
+                fontWeight: 600,
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.15)",
+                color: "rgba(200,220,240,0.6)",
+                borderRadius: 4,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              No thanks
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
