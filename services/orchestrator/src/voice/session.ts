@@ -89,6 +89,9 @@ export class VoiceSession {
   /** Whether user consented to data collection. */
   private consentGiven: boolean = false;
 
+  /** User's name (if provided). */
+  private userName: string | null = null;
+
   /** User location context sent by the browser. */
   private userContext: { timezone?: string; lat?: number; lng?: number; city?: string } = {};
 
@@ -176,11 +179,12 @@ export class VoiceSession {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "start") {
-          // Capture persistent user ID + consent for cross-session memory.
+          // Capture persistent user ID, name, and consent.
           if (msg.userId) {
             this.userId = msg.userId;
             this.consentGiven = msg.consent === "accepted";
-            this.deps.logger.info({ userId: this.userId, consent: this.consentGiven }, "user identified");
+            if (msg.userName) this.userName = msg.userName;
+            this.deps.logger.info({ userId: this.userId, name: this.userName, consent: this.consentGiven }, "user identified");
           }
           if (this.convState === "ambient") this.engage();
         } else if (msg.type === "context") {
@@ -470,6 +474,7 @@ When uncertain, answer "no". Examples:
       const result = await this.deps.reasoner.reason({
         sessionId: this.deps.id,
         userId: this.userId,
+        userName: this.userName,
         userText: text,
         affect,
         convState: this.convState,

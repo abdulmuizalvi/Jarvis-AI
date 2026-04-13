@@ -151,9 +151,11 @@ export function useVoiceSession(wsUrl: string) {
       console.log("[voice] WS open");
       setDiag("ws open · requesting mic");
       const consent = localStorage.getItem("jarvis_consent") ?? "pending";
+      const userName = localStorage.getItem("jarvis_user_name") ?? undefined;
       ws.send(JSON.stringify({
         type: "start",
         userId: consent === "accepted" ? getUserId() : undefined,
+        userName,
         consent,
       }));
 

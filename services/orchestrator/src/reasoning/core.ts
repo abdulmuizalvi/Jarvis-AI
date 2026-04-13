@@ -22,6 +22,7 @@ import { ARIA_TOOLS } from "../agent/tools.js";
 export interface ReasonRequest {
   sessionId: string;
   userId?: string;
+  userName?: string | null;
   userText: string;
   affect: Affect;
   convState?: "ambient" | "engaged";
@@ -85,6 +86,9 @@ export class ReasoningCore {
       : "(no prior memories)";
 
     // ── Cross-session context ──────────────────────────
+    const userNameBlock = req.userName
+      ? `<user_name>${req.userName}</user_name>\n`
+      : "";
     let crossSessionBlock = "";
     let adaptationsBlock = "";
     let qualityNote = "";
@@ -132,6 +136,7 @@ export class ReasoningCore {
     const systemMessage =
       this.systemPrompt +
       `\n\n<current_time>${timeStr}</current_time>\n` +
+      userNameBlock +
       locationBlock +
       crossSessionBlock +
       adaptationsBlock +

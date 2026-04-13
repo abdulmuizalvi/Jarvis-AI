@@ -29,8 +29,26 @@ function useConsent() {
   return { consent, accept, decline };
 }
 
+/** User name — asked once after consent, stored in localStorage. */
+function useUserName() {
+  const KEY = "jarvis_user_name";
+  const [name, setName] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(KEY);
+  });
+  const saveName = (n: string) => {
+    const trimmed = n.trim();
+    if (!trimmed) return;
+    localStorage.setItem(KEY, trimmed);
+    setName(trimmed);
+  };
+  return { name, saveName, needsName: name === null };
+}
+
 export function App() {
   const { consent, accept, decline } = useConsent();
+  const { name: userName, saveName, needsName } = useUserName();
+  const [nameInput, setNameInput] = useState("");
   const { state, convState, affect, transcript, response, error, diag, stats, start, stop, sendText } =
     useVoiceSession(GATEWAY_WS);
 
@@ -259,6 +277,77 @@ export function App() {
           }}
         />
       </div>
+
+      {/* ── Name prompt (after consent accepted, before first use) ────── */}
+      {consent === "accepted" && needsName && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(2,8,16,0.92)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10000,
+          backdropFilter: "blur(16px)",
+        }}>
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 20,
+            padding: 40,
+            maxWidth: 360,
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          }}>
+            <div style={{ fontSize: 13, color: "rgba(0,180,255,0.7)", letterSpacing: 2, textTransform: "uppercase" }}>
+              Initializing
+            </div>
+            <div style={{ fontSize: 16, color: "rgba(200,220,240,0.9)", textAlign: "center", lineHeight: 1.6 }}>
+              What should I call you?
+            </div>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && nameInput.trim()) saveName(nameInput); }}
+              placeholder="Your name"
+              autoFocus
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                fontSize: 16,
+                background: "rgba(0,180,255,0.06)",
+                border: "1px solid rgba(0,180,255,0.25)",
+                borderRadius: 6,
+                color: "rgba(200,230,255,0.95)",
+                fontFamily: "inherit",
+                outline: "none",
+                textAlign: "center",
+                boxSizing: "border-box",
+              }}
+            />
+            <button
+              onClick={() => { if (nameInput.trim()) saveName(nameInput); }}
+              disabled={!nameInput.trim()}
+              style={{
+                padding: "10px 32px",
+                fontSize: 12,
+                fontWeight: 600,
+                background: nameInput.trim() ? "rgba(0,180,255,0.15)" : "transparent",
+                border: `1px solid ${nameInput.trim() ? "rgba(0,180,255,0.4)" : "rgba(255,255,255,0.1)"}`,
+                color: nameInput.trim() ? "rgba(0,200,255,0.95)" : "rgba(200,220,240,0.3)",
+                borderRadius: 4,
+                cursor: nameInput.trim() ? "pointer" : "default",
+                fontFamily: "inherit",
+                letterSpacing: 1,
+                textTransform: "uppercase",
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Privacy consent banner ────────────────── */}
       {consent === "pending" && (
