@@ -268,16 +268,28 @@ export class VoiceSession {
   // ─────────────────── engaged mode ───────────────────
 
   private async handleEngaged(utterance: string) {
-    // 1. Explicit disengagement phrase ("goodbye", "thanks jarvis").
-    if (DISENGAGE_RE.test(utterance)) {
-      this.deps.logger.info({ utterance }, "disengagement phrase — going ambient");
-      this.disengage();
+    // 1. Wake word always responds immediately.
+    if (this.wakeWordRe.test(utterance)) {
+      const cleaned = utterance.replace(this.wakeWordRe, "").replace(/^[\s,.!?]+/, "").trim();
+      this.resetEngagementTimer();
+      await this.respondTo(cleaned.length >= 2 ? cleaned : utterance, { source: "voice" });
       return;
     }
 
-    // 2. When engaged, respond to EVERYTHING. The user explicitly started
-    //    a conversation — no classifier needed. Disengagement only happens
-    //    via explicit phrase (above) or engagement timeout (120s silence).
+    // 2. Smart audience detection — only skip utterances that are CLEARLY
+    //    part of a conversation with another human. Default: respond.
+    const intent = await this.classifyIntent(utterance, "engaged");
+
+    if (intent !== "address_jarvis") {
+      // Just skip this one utterance silently — do NOT disengage.
+      // JARVIS stays engaged and ready for the next thing directed at it.
+      this.send({ type: "ambient_logged", text: utterance });
+      this.deps.logger.info({ utterance }, "engaged — skipping (talking to someone else)");
+      this.resetEngagementTimer();
+      return;
+    }
+
+    // 3. Directed at JARVIS — respond.
     this.resetEngagementTimer();
     await this.respondTo(utterance, { source: "voice" });
   }
@@ -320,18 +332,18 @@ export class VoiceSession {
 
     const systemPrompt =
       mode === "engaged"
-        ? // Already in conversation — be lenient. Only "ignore" on clear
-          // signs the user is talking to someone else.
-          `You are a strict classifier in a multilingual voice assistant.
-The user is currently mid-conversation with JARVIS, an AI assistant.
-Decide if the next utterance is part of that conversation, OR clearly directed at someone else.
+        ? // Already in conversation — EXTREMELY lenient. Only say "no" when
+          // the user is OBVIOUSLY talking to another specific human by name.
+          `You classify whether a voice utterance is for JARVIS (an AI assistant) or for another human.
 
-Reply with EXACTLY one word: "yes" or "no".
+The user has an ACTIVE conversation with JARVIS right now.
 
-"yes" = continuing the conversation with JARVIS (questions, answers, follow-ups, commands, acknowledgements like "ok" / "right" / "got it").
-"no"  = clearly speaking to another human in the room or on a phone, addressing them by name, or reading something aloud to them.
+Reply EXACTLY "yes" or "no".
 
-When uncertain, answer "yes". Hindi, Urdu, Arabic, Spanish and other languages all count.`
+"yes" = ANYTHING that could possibly be directed at JARVIS: questions, commands, thoughts, opinions, follow-ups, single words, fragments, any language.
+"no"  = the user said another person's name AND is clearly talking TO that person. Example: "Hey Mike pass me that", "Sarah can you hear me", "Mom I'll call you back".
+
+IMPORTANT: If there is ANY doubt, answer "yes". Only say "no" when you are absolutely certain the user is addressing a specific other human by name. A question like "what do you think?" or "tell me more" is ALWAYS "yes".`
         : // Cold start — be selective. Only engage if the utterance looks
           // like a real question/command directed at an assistant.
           `You are a strict classifier in a multilingual voice assistant.
