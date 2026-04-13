@@ -337,30 +337,27 @@ export class VoiceSession {
 
     const systemPrompt =
       mode === "engaged"
-        ? `You decide if a new voice utterance is directed at JARVIS (AI assistant) or at another human in the room.
+        ? `You decide if a voice utterance is CLEARLY directed at JARVIS (AI assistant) or NOT.
 
-RECENT CONVERSATION WITH JARVIS:
-${contextLines || "(just started)"}
-
-Now the user says something new. Is it for JARVIS or for someone else?
+RECENT CONVERSATION:
+${contextLines || "(none)"}
 
 Reply EXACTLY "yes" or "no".
 
-"yes" — for JARVIS. This includes:
-- Follow-up questions about what JARVIS just said ("what about X?", "tell me more", "and then?")
-- Any question asking for information, opinions, or help
-- Commands an AI can do (search, remind, explain, translate)
-- Continuing the conversation thread above
-- Single words or fragments that relate to the ongoing topic
-- Any language (English, Urdu, Hindi, Arabic, etc.)
+"yes" ONLY when:
+- User says "Jarvis" or addresses the assistant by name
+- A direct follow-up question that ONLY makes sense as a reply to what JARVIS just said above
+- An explicit command for an AI ("search for", "remind me", "explain", "translate", "what is")
+- A clear information question ("what time is it", "how far is", "who was")
 
-"no" — for another human. This includes:
-- Physical requests no AI can do ("hand me that", "pass the water", "move over")
-- Addressing someone by name ("hey Sarah", "bro come here", "mom listen")
-- Social chatter clearly directed at someone present ("nice shirt", "you hungry?")
-- Phone call fragments ("hello? can you hear me?", "I'll call you back")
+"no" for EVERYTHING else:
+- Casual speech, opinions, thinking out loud ("hmm", "yeah", "ok so", "I think")
+- Talking to another person ("pass me that", "you coming?", "bro", "hey", "mom")
+- Statements not asking JARVIS anything ("that's cool", "I need to go", "she said")
+- Fragments, fillers, laughter, background noise
+- Anything where you're not 100% sure it's for JARVIS
 
-KEY RULE: If the utterance relates to the topic JARVIS was just discussing, it is ALWAYS "yes" — even without saying "Jarvis". When in doubt, "yes".`
+CRITICAL: When uncertain, answer "no". JARVIS must NOT interrupt. Only say "yes" when you are CERTAIN the user is speaking TO the assistant.`
         : `You classify if a voice utterance is directed at JARVIS (AI assistant) or is background speech.
 
 Reply EXACTLY "yes" or "no".
