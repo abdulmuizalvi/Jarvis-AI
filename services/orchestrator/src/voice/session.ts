@@ -162,7 +162,12 @@ export class VoiceSession {
 
       try {
         const msg = JSON.parse(data.toString());
-        if (msg.type === "text") {
+        if (msg.type === "start") {
+          // User explicitly clicked "engage" — enter engaged mode immediately
+          // so JARVIS responds to everything without requiring wake word or
+          // passing the ambient classifier.
+          if (this.convState === "ambient") this.engage();
+        } else if (msg.type === "text") {
           await this.respondTo(msg.text, { source: "text" });
         } else if (msg.type === "utterance_test") {
           // Test-only: simulate a committed voice utterance without real ASR.
