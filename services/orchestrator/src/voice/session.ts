@@ -326,50 +326,51 @@ export class VoiceSession {
     }
 
     if (!this.classifier) {
-      // No classifier — fall back to permissive (engaged) or strict (ambient).
       return mode === "engaged" ? "address_jarvis" : "ignore";
     }
 
+    // Build recent conversation context so the classifier can see the flow.
+    const recent = this.deps.memory.recentTurns(this.deps.id, 4);
+    const contextLines = recent.map((t: any) =>
+      `${t.role === "user" ? "User" : "JARVIS"}: ${(t.content as string).slice(0, 120)}`
+    ).join("\n");
+
     const systemPrompt =
       mode === "engaged"
-        ? // Already in conversation — EXTREMELY lenient. Only say "no" when
-          // the user is OBVIOUSLY talking to another specific human by name.
-          `You classify whether a voice utterance is for JARVIS (an AI assistant) or for another human.
+        ? `You decide if a new voice utterance is directed at JARVIS (AI assistant) or at another human in the room.
 
-The user has an ACTIVE conversation with JARVIS right now.
+RECENT CONVERSATION WITH JARVIS:
+${contextLines || "(just started)"}
+
+Now the user says something new. Is it for JARVIS or for someone else?
 
 Reply EXACTLY "yes" or "no".
 
-"yes" = ANYTHING that could possibly be directed at JARVIS: questions, commands, thoughts, opinions, follow-ups, single words, fragments, any language.
-"no"  = the user said another person's name AND is clearly talking TO that person. Example: "Hey Mike pass me that", "Sarah can you hear me", "Mom I'll call you back".
+"yes" — for JARVIS. This includes:
+- Follow-up questions about what JARVIS just said ("what about X?", "tell me more", "and then?")
+- Any question asking for information, opinions, or help
+- Commands an AI can do (search, remind, explain, translate)
+- Continuing the conversation thread above
+- Single words or fragments that relate to the ongoing topic
+- Any language (English, Urdu, Hindi, Arabic, etc.)
 
-IMPORTANT: If there is ANY doubt, answer "yes". Only say "no" when you are absolutely certain the user is addressing a specific other human by name. A question like "what do you think?" or "tell me more" is ALWAYS "yes".`
-        : // Cold start — be selective. Only engage if the utterance looks
-          // like a real question/command directed at an assistant.
-          `You are a strict classifier in a multilingual voice assistant.
-Decide if a transcribed utterance is being directed at JARVIS, an always-listening AI assistant, OR is background speech / talking to a human.
+"no" — for another human. This includes:
+- Physical requests no AI can do ("hand me that", "pass the water", "move over")
+- Addressing someone by name ("hey Sarah", "bro come here", "mom listen")
+- Social chatter clearly directed at someone present ("nice shirt", "you hungry?")
+- Phone call fragments ("hello? can you hear me?", "I'll call you back")
 
-Reply with EXACTLY one word: "yes" or "no".
+KEY RULE: If the utterance relates to the topic JARVIS was just discussing, it is ALWAYS "yes" — even without saying "Jarvis". When in doubt, "yes".`
+        : `You classify if a voice utterance is directed at JARVIS (AI assistant) or is background speech.
 
-"yes" = the user is addressing the assistant: a question, a command (timer/reminder/play/look up/search), naming JARVIS, or asking for information.
-"no"  = the user is talking to another human, on a phone call, narrating to themselves, reading something aloud, making throat sounds, or saying a fragment that wasn't meant for the assistant.
+Reply EXACTLY "yes" or "no".
 
-When uncertain, answer "no" — JARVIS should NOT randomly interject.
+"yes" = addressing an assistant: questions, commands, naming JARVIS, asking for information. Any language counts.
+"no"  = talking to another human, on a phone, narrating to themselves, background noise, fragments.
 
-Examples:
-"jarvis what time is it" → yes
-"what's the weather like" → yes
-"set a timer for 5 minutes" → yes
-"remind me to call mom tomorrow" → yes
-"can you tell me about black holes" → yes
-"play some lo-fi music" → yes
-"hey michael grab the keys" → no
-"i need to remember to email her" → no
-"she said she'd be here at three" → no
-"ok let me think about that" → no
-"ummm yeah so" → no
-"mujhe kal yaad dilana" (Urdu/Hindi: "remind me tomorrow") → yes
-"abhi kya time hai" (Hindi: "what time is it now") → yes`;
+When uncertain, answer "no". Examples:
+"jarvis what time is it" → yes | "what's the weather" → yes | "set a timer" → yes
+"hey michael grab the keys" → no | "she said three o'clock" → no | "ummm yeah" → no`;
 
     try {
       const res = await this.classifier.chat.completions.create({
@@ -384,10 +385,9 @@ Examples:
 
       const verdict = res.choices[0]?.message?.content?.trim().toLowerCase() ?? "no";
       const addressed = verdict.startsWith("y");
-      this.deps.logger.debug({ utterance, mode, verdict }, "intent classification");
+      this.deps.logger.debug({ utterance, mode, verdict, context: contextLines }, "intent classification");
       return addressed ? "address_jarvis" : "ignore";
     } catch (err) {
-      // On classifier failure: stay engaged if engaged, stay quiet if ambient.
       return mode === "engaged" ? "address_jarvis" : "ignore";
     }
   }
