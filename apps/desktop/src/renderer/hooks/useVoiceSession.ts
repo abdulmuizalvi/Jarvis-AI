@@ -141,23 +141,35 @@ export function useVoiceSession(wsUrl: string) {
       setDiag("ws open · requesting mic");
       ws.send(JSON.stringify({ type: "start" }));
 
-      // Send timezone (free, no permission) + geolocation (one-time prompt).
+      // Send timezone + geolocation so JARVIS knows where you are.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       ws.send(JSON.stringify({ type: "context", timezone: tz }));
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            if (ws.readyState === 1) {
-              ws.send(JSON.stringify({
-                type: "context",
-                timezone: tz,
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-              }));
-            }
+          async (pos) => {
+            if (ws.readyState !== 1) return;
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            // Reverse geocode to get city name via free API.
+            let city = "";
+            try {
+              const res = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=10`,
+                { headers: { "Accept-Language": "en" } }
+              );
+              const data = await res.json();
+              city = data?.address?.city || data?.address?.town || data?.address?.state || "";
+            } catch { /* geocode failed — coords are still useful */ }
+            ws.send(JSON.stringify({
+              type: "context",
+              timezone: tz,
+              lat,
+              lng,
+              city,
+            }));
           },
           () => { /* permission denied — timezone is enough */ },
-          { timeout: 5000, maximumAge: 300000 },
+          { timeout: 8000, maximumAge: 600000 },
         );
       }
       try {

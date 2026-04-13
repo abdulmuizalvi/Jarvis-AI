@@ -24,7 +24,7 @@ export interface ReasonRequest {
   userText: string;
   affect: Affect;
   convState?: "ambient" | "engaged";
-  userContext?: { timezone?: string; lat?: number; lng?: number };
+  userContext?: { timezone?: string; lat?: number; lng?: number; city?: string };
   onToken: (text: string) => void;
   onToolUse?: (name: string, input: unknown) => Promise<unknown>;
 }
@@ -93,8 +93,11 @@ export class ReasoningCore {
     } catch {
       timeStr = now.toISOString();
     }
+    const locationParts = [loc.timezone ? `timezone: ${loc.timezone}` : ""];
+    if (loc.city) locationParts.push(`city: ${loc.city}`);
+    if (loc.lat != null) locationParts.push(`lat: ${loc.lat}, lng: ${loc.lng}`);
     const locationBlock = loc.timezone
-      ? `<user_location>timezone: ${loc.timezone}${loc.lat != null ? `, lat: ${loc.lat}, lng: ${loc.lng}` : ""}</user_location>\n`
+      ? `<user_location>${locationParts.filter(Boolean).join(", ")}</user_location>\n`
       : "";
     const systemMessage =
       this.systemPrompt +

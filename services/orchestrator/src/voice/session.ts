@@ -84,7 +84,7 @@ export class VoiceSession {
   private speaking = false;
 
   /** User location context sent by the browser. */
-  private userContext: { timezone?: string; lat?: number; lng?: number } = {};
+  private userContext: { timezone?: string; lat?: number; lng?: number; city?: string } = {};
 
   /** ASR fragment buffer for the current utterance. */
   private utteranceBuffer: string[] = [];
@@ -175,6 +175,7 @@ export class VoiceSession {
           if (msg.timezone) this.userContext.timezone = msg.timezone;
           if (msg.lat != null) this.userContext.lat = msg.lat;
           if (msg.lng != null) this.userContext.lng = msg.lng;
+          if (msg.city) this.userContext.city = msg.city;
           this.deps.logger.info({ ctx: this.userContext }, "user context updated");
         } else if (msg.type === "text") {
           await this.respondTo(msg.text, { source: "text" });
