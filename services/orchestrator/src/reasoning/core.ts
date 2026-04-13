@@ -94,11 +94,17 @@ export class ReasoningCore {
       `<memory>\n${memoryBlock}\n</memory>\n` +
       `<affect>${JSON.stringify(req.affect)}</affect>\n` +
       `<style>${JSON.stringify(style)}</style>\n` +
-      `<conv_state>${req.convState ?? "engaged"}</conv_state>`;
+      `<conv_state>${req.convState ?? "engaged"}</conv_state>\n\n` +
+      `IMPORTANT REMINDER: Respond naturally with full, complete answers. Never give one-word or one-sentence answers unless it's a simple yes/no question. Speak like a real person having a real conversation.`;
+
+    // Filter out very short assistant turns so the model doesn't mimic one-word patterns.
+    const filteredRecent = recent.filter((t: any) =>
+      t.role === "user" || (t.content as string).length > 20
+    );
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: "system", content: systemMessage },
-      ...recent.map((t: any) => ({ role: t.role as "user" | "assistant", content: t.content as string })),
+      ...filteredRecent.map((t: any) => ({ role: t.role as "user" | "assistant", content: t.content as string })),
       { role: "user", content: req.userText },
     ];
 
